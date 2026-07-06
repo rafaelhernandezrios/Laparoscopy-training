@@ -18,7 +18,14 @@ namespace SutureTrainer
         public Transform jawB;
         public Transform jawAnchor;   // punto de agarre / punta
 
+        public enum ControlMode
+        {
+            Absoluto,   // el instrumento sigue la mano 1:1 (más intuitivo)
+            Relativo    // deltas escalados con clutch (fiel a consola da Vinci)
+        }
+
         [Header("Teleoperación")]
+        public ControlMode mode = ControlMode.Absoluto;
         [Range(0.1f, 1.5f)] public float motionScale = 0.75f;
         public Vector3 rotationOffsetEuler = new Vector3(50f, 0f, 0f);
         public Vector3 workspaceCenter;
@@ -36,6 +43,9 @@ namespace SutureTrainer
         Vector3 _target;
         Vector3 _lastMaster;
         bool _hasMaster;
+        Vector3 _absOffset;
+        bool _absInit;
+        bool _wasClutch;
         bool _wasClosed;
         Vector3 _lastTip;
         bool _hasTip;
@@ -50,16 +60,31 @@ namespace SutureTrainer
         {
             if (master == null || wrist == null) return;
 
-            // --- posición objetivo (delta del maestro, con clutch) ---
+            // --- posición objetivo ---
             if (master.IsTracked && !frozen)
             {
-                if (!_hasMaster) { _lastMaster = master.WorldPos; _hasMaster = true; }
-                Vector3 delta = master.WorldPos - _lastMaster;
-                _lastMaster = master.WorldPos;
-                if (!master.Clutch)
-                    _target += delta * motionScale;
+                if (mode == ControlMode.Absoluto)
+                {
+                    // 1:1 con la mano; el desfase inicial se calcula en el primer
+                    // frame para que el instrumento arranque donde lo dejó la escena
+                    if (!_absInit) { _absOffset = _target - master.WorldPos; _absInit = true; }
+                    bool clutch = master.Clutch;
+                    if (_wasClutch && !clutch)
+                        _absOffset = _target - master.WorldPos; // re-anclar tras clutch
+                    if (!clutch)
+                        _target = master.WorldPos + _absOffset;
+                    _wasClutch = clutch;
+                }
+                else
+                {
+                    if (!_hasMaster) { _lastMaster = master.WorldPos; _hasMaster = true; }
+                    Vector3 delta = master.WorldPos - _lastMaster;
+                    _lastMaster = master.WorldPos;
+                    if (!master.Clutch)
+                        _target += delta * motionScale;
+                }
             }
-            else _hasMaster = false;
+            else { _hasMaster = false; }
 
             _target = ClampToWorkspace(_target);
             wrist.position = Vector3.Lerp(wrist.position, _target, 1f - Mathf.Pow(0.001f, Time.deltaTime));
