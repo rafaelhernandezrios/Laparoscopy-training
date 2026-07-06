@@ -239,6 +239,7 @@ namespace SutureTrainer.EditorTools
             origin.Camera = cam;
             origin.CameraFloorOffsetObject = offset;
             origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+            rig.AddComponent<RigRecenter>();
 
             return offset.transform;
         }
@@ -334,6 +335,9 @@ namespace SutureTrainer.EditorTools
             var t = go.AddComponent<TextMeshPro>();
             t.text = content;
             t.fontSize = size;
+            t.enableAutoSizing = true;      // nunca desborda su rectángulo
+            t.fontSizeMax = size;
+            t.fontSizeMin = size * 0.25f;
             t.color = color;
             t.alignment = TextAlignmentOptions.Center;
             t.textWrappingMode = TextWrappingModes.Normal;
@@ -360,14 +364,14 @@ namespace SutureTrainer.EditorTools
 
             MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.5f, 0.5f));
             var hud = root.AddComponent<HUD>();
-            hud.titleText = MakeText(root.transform, "Title", "", 1.6f,
-                new Vector3(0f, 0.17f, -0.005f), new Vector2(1.4f, 0.14f), new Color(0.65f, 0.85f, 1f));
-            hud.objectiveText = MakeText(root.transform, "Objective", "", 1.0f,
-                new Vector3(0f, 0.02f, -0.005f), new Vector2(1.4f, 0.2f), Color.white);
-            hud.timerText = MakeText(root.transform, "Timer", "00:00", 0.9f,
-                new Vector3(0f, -0.15f, -0.005f), new Vector2(1.4f, 0.1f), new Color(0.8f, 0.8f, 0.8f));
-            hud.flashText = MakeText(root.transform, "Flash", "", 1.1f,
-                new Vector3(0f, -0.28f, -0.005f), new Vector2(1.4f, 0.12f), Color.green);
+            hud.titleText = MakeText(root.transform, "Title", "", 0.8f,
+                new Vector3(0f, 0.17f, -0.005f), new Vector2(1.4f, 0.12f), new Color(0.65f, 0.85f, 1f));
+            hud.objectiveText = MakeText(root.transform, "Objective", "", 0.55f,
+                new Vector3(0f, 0.02f, -0.005f), new Vector2(1.4f, 0.18f), Color.white);
+            hud.timerText = MakeText(root.transform, "Timer", "00:00", 0.5f,
+                new Vector3(0f, -0.15f, -0.005f), new Vector2(1.4f, 0.08f), new Color(0.8f, 0.8f, 0.8f));
+            hud.flashText = MakeText(root.transform, "Flash", "", 0.6f,
+                new Vector3(0f, -0.26f, -0.005f), new Vector2(1.4f, 0.1f), Color.green);
             return hud;
         }
 
@@ -382,8 +386,8 @@ namespace SutureTrainer.EditorTools
             var btn = cube.AddComponent<WorldButton>();
             btn.sceneToLoad = scene;
             // el texto no puede heredar la escala del cubo: lo colocamos como hermano
-            var txt = MakeText(parent, $"Lbl_{label}", label, 0.8f,
-                localPos + new Vector3(0f, 0f, -0.025f), new Vector2(0.5f, 0.09f), Color.white);
+            var txt = MakeText(parent, $"Lbl_{label}", label, 0.42f,
+                localPos + new Vector3(0f, 0f, -0.025f), new Vector2(0.44f, 0.08f), Color.white);
             return btn;
         }
 
@@ -397,8 +401,8 @@ namespace SutureTrainer.EditorTools
             panel.starOn = mats["StarOn"];
             panel.starOff = mats["StarOff"];
 
-            panel.titleText = MakeText(root.transform, "Title", "Resultados", 1.5f,
-                new Vector3(0f, 0.33f, -0.005f), new Vector2(1f, 0.14f), new Color(1f, 0.9f, 0.5f));
+            panel.titleText = MakeText(root.transform, "Title", "Resultados", 0.8f,
+                new Vector3(0f, 0.33f, -0.005f), new Vector2(1f, 0.12f), new Color(1f, 0.9f, 0.5f));
 
             panel.starRenderers = new Renderer[3];
             for (int i = 0; i < 3; i++)
@@ -413,7 +417,7 @@ namespace SutureTrainer.EditorTools
                 panel.starRenderers[i].sharedMaterial = mats["StarOff"];
             }
 
-            panel.statsText = MakeText(root.transform, "Stats", "", 0.9f,
+            panel.statsText = MakeText(root.transform, "Stats", "", 0.5f,
                 new Vector3(0f, -0.02f, -0.005f), new Vector2(1f, 0.3f), Color.white);
 
             panel.retryButton = MakeButton(root.transform, "Reintentar", new Vector3(-0.33f, -0.32f, -0.01f), "");
@@ -429,10 +433,10 @@ namespace SutureTrainer.EditorTools
 
             MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.6f, 1.25f));
 
-            MakeText(root.transform, "Title", "ENTRENADOR DE SUTURA ROBÓTICA", 2.2f,
-                new Vector3(0f, 0.5f, -0.005f), new Vector2(1.5f, 0.2f), new Color(0.65f, 0.85f, 1f));
-            MakeText(root.transform, "Sub", "Apunta con el controlador derecho y pulsa el gatillo", 0.9f,
-                new Vector3(0f, 0.37f, -0.005f), new Vector2(1.5f, 0.1f), new Color(0.7f, 0.7f, 0.75f));
+            MakeText(root.transform, "Title", "ENTRENADOR DE SUTURA ROBÓTICA", 1.1f,
+                new Vector3(0f, 0.5f, -0.005f), new Vector2(1.5f, 0.16f), new Color(0.65f, 0.85f, 1f));
+            MakeText(root.transform, "Sub", "Apunta con el controlador derecho y pulsa el gatillo", 0.5f,
+                new Vector3(0f, 0.37f, -0.005f), new Vector2(1.5f, 0.08f), new Color(0.7f, 0.7f, 0.75f));
 
             string[] labels =
             {
@@ -448,7 +452,7 @@ namespace SutureTrainer.EditorTools
 
             MakeText(root.transform, "Help",
                 "Controles: gatillo = cerrar mandíbulas · botón A/X = clutch (reposicionar sin mover el instrumento)",
-                0.7f, new Vector3(0f, -0.53f, -0.005f), new Vector2(1.5f, 0.12f), new Color(0.6f, 0.6f, 0.65f));
+                0.4f, new Vector3(0f, -0.53f, -0.005f), new Vector2(1.5f, 0.1f), new Color(0.6f, 0.6f, 0.65f));
         }
     }
 }
