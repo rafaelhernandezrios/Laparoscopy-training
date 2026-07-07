@@ -43,9 +43,6 @@ namespace SutureTrainer
         Vector3 _target;
         Vector3 _lastMaster;
         bool _hasMaster;
-        Vector3 _absOffset;
-        bool _absInit;
-        bool _wasClutch;
         bool _wasClosed;
         Vector3 _lastTip;
         bool _hasTip;
@@ -65,15 +62,9 @@ namespace SutureTrainer
             {
                 if (mode == ControlMode.Absoluto)
                 {
-                    // 1:1 con la mano; el desfase inicial se calcula en el primer
-                    // frame para que el instrumento arranque donde lo dejó la escena
-                    if (!_absInit) { _absOffset = _target - master.WorldPos; _absInit = true; }
-                    bool clutch = master.Clutch;
-                    if (_wasClutch && !clutch)
-                        _absOffset = _target - master.WorldPos; // re-anclar tras clutch
-                    if (!clutch)
-                        _target = master.WorldPos + _absOffset;
-                    _wasClutch = clutch;
+                    // la muñeca del instrumento está EN la mano, con un pequeño
+                    // avance hacia delante como si sostuvieras la herramienta
+                    _target = master.WorldPos + master.WorldRot * new Vector3(0f, 0f, 0.05f);
                 }
                 else
                 {
@@ -86,7 +77,8 @@ namespace SutureTrainer
             }
             else { _hasMaster = false; }
 
-            _target = ClampToWorkspace(_target);
+            if (mode == ControlMode.Relativo)
+                _target = ClampToWorkspace(_target); // en absoluto la mano manda
             wrist.position = Vector3.Lerp(wrist.position, _target, 1f - Mathf.Pow(0.001f, Time.deltaTime));
 
             // --- orientación de la muñeca (EndoWrist) ---
