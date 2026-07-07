@@ -55,7 +55,7 @@ namespace SutureTrainer
             if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
             rb.mass = 0.02f;
             rb.isKinematic = true; // se activa la gravedad al soltar (Graspable)
-            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.interpolation = RigidbodyInterpolation.None; // evita retraso visual al ir agarrada
         }
     }
 }

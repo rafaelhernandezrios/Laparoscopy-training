@@ -1,16 +1,21 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace SutureTrainer
 {
     /// <summary>
     /// Láser de selección del controlador derecho para menús y panel de
     /// resultados. Se activa en el menú y al terminar un nivel.
+    /// También permite salir al menú manteniendo pulsado B/Y (~1 s).
     /// </summary>
     public class ControllerLaser : MonoBehaviour
     {
         public MasterInput master;
         public bool startActive;
         public float maxDistance = 6f;
+        public float exitHoldSeconds = 1.0f;
+
+        float _exitHold;
 
         LineRenderer lr;
         WorldButton hovered;
@@ -41,6 +46,7 @@ namespace SutureTrainer
 
         void Update()
         {
+            CheckQuickExit();
             if (!active || master == null || !master.IsTracked) { if (lr != null) lr.enabled = false; return; }
             lr.enabled = true;
 
@@ -69,6 +75,24 @@ namespace SutureTrainer
 
             lr.SetPosition(0, origin);
             lr.SetPosition(1, end);
+        }
+
+        /// <summary>Mantener B/Y ~1 s en cualquier nivel → volver al menú.</summary>
+        void CheckQuickExit()
+        {
+            if (master == null) return;
+            if (SceneManager.GetActiveScene().name == GameFlow.MenuScene) return;
+
+            if (master.Secondary)
+            {
+                _exitHold += Time.deltaTime;
+                if (_exitHold >= exitHoldSeconds)
+                {
+                    master.Haptic(0.5f, 0.1f);
+                    GameFlow.LoadMenu();
+                }
+            }
+            else _exitHold = 0f;
         }
     }
 }

@@ -451,7 +451,7 @@ namespace SutureTrainer.EditorTools
                     new Vector3(0f, 0.22f - i * 0.13f, -0.01f), GameFlow.Scenes[i + 1]);
 
             MakeText(root.transform, "Help",
-                "Controles: gatillo = cerrar mandíbulas · botón A/X = clutch (reposicionar sin mover el instrumento)",
+                "Controles: gatillo = cerrar mandíbulas · mantener B/Y = salir al menú",
                 0.4f, new Vector3(0f, -0.53f, -0.005f), new Vector2(1.5f, 0.1f), new Color(0.6f, 0.6f, 0.65f));
         }
     }

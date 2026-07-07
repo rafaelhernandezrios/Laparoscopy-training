@@ -79,13 +79,21 @@ namespace SutureTrainer
 
             if (mode == ControlMode.Relativo)
                 _target = ClampToWorkspace(_target); // en absoluto la mano manda
-            wrist.position = Vector3.Lerp(wrist.position, _target, 1f - Mathf.Pow(0.001f, Time.deltaTime));
+
+            // en absoluto: sin suavizado extra (el MasterInput ya filtra temblor)
+            if (mode == ControlMode.Absoluto)
+                wrist.position = _target;
+            else
+                wrist.position = Vector3.Lerp(wrist.position, _target, 1f - Mathf.Pow(0.001f, Time.deltaTime));
 
             // --- orientación de la muñeca (EndoWrist) ---
             if (master.IsTracked && !frozen)
             {
                 Quaternion goal = master.WorldRot * Quaternion.Euler(rotationOffsetEuler);
-                wrist.rotation = Quaternion.Slerp(wrist.rotation, goal, 1f - Mathf.Pow(0.0005f, Time.deltaTime));
+                if (mode == ControlMode.Absoluto)
+                    wrist.rotation = goal;
+                else
+                    wrist.rotation = Quaternion.Slerp(wrist.rotation, goal, 1f - Mathf.Pow(0.0005f, Time.deltaTime));
             }
 
             UpdateShaft();

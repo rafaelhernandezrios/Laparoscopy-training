@@ -24,6 +24,7 @@ namespace SutureTrainer
         public float Trigger { get; private set; }   // 0..1 cierre de mandíbula
         public float Grip { get; private set; }
         public bool Clutch { get; private set; }     // botón primario (A/X)
+        public bool Secondary { get; private set; }  // botón secundario (B/Y)
         public bool TriggerPressed => Trigger > 0.7f;
 
         InputAction _posAction;
@@ -31,6 +32,7 @@ namespace SutureTrainer
         InputAction _triggerAction;
         InputAction _gripAction;
         InputAction _primaryAction;
+        InputAction _secondaryAction;
         UnityEngine.XR.InputDevice _legacyDevice;
         Vector3 _smPos;
         Quaternion _smRot = Quaternion.identity;
@@ -44,11 +46,13 @@ namespace SutureTrainer
             _triggerAction = new InputAction(binding: $"<XRController>{hand}/trigger");
             _gripAction = new InputAction(binding: $"<XRController>{hand}/grip");
             _primaryAction = new InputAction(binding: $"<XRController>{hand}/primaryButton");
+            _secondaryAction = new InputAction(binding: $"<XRController>{hand}/secondaryButton");
             _posAction.Enable();
             _rotAction.Enable();
             _triggerAction.Enable();
             _gripAction.Enable();
             _primaryAction.Enable();
+            _secondaryAction.Enable();
         }
 
         void OnDisable()
@@ -58,6 +62,7 @@ namespace SutureTrainer
             _triggerAction?.Disable();
             _gripAction?.Disable();
             _primaryAction?.Disable();
+            _secondaryAction?.Disable();
         }
 
         void Update()
@@ -80,6 +85,8 @@ namespace SutureTrainer
             _legacyDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.trigger, out trig);
             _legacyDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.grip, out grip);
             _legacyDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out prim);
+            _legacyDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.secondaryButton, out bool sec);
+            Secondary = sec;
             ApplyPose(rawPos, rawRot, trig, grip, prim);
         }
 
@@ -102,6 +109,7 @@ namespace SutureTrainer
             trig = _triggerAction.ReadValue<float>();
             grip = _gripAction.ReadValue<float>();
             prim = _primaryAction.IsPressed();
+            Secondary = _secondaryAction.IsPressed();
             return true;
         }
 
