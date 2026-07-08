@@ -9,9 +9,8 @@ namespace SutureTrainer
     /// (puntos de punción en el tejido), deslizamiento del hilo a través de los
     /// pines al tirar, métrica de tensión y cincha de nudo.
     /// </summary>
-    public class VerletThread : MonoBehaviour
+    public class VerletThread : ThreadBase
     {
-        public Transform anchor;            // cola de la aguja
         public int particleCount = 70;
         public float totalLength = 1.1f;    // macro (~22 cm reales a 5x)
         public int constraintIterations = 5;
@@ -21,14 +20,11 @@ namespace SutureTrainer
         public Material tenseMat;
         public float lineWidth = 0.006f;
 
-        [HideInInspector] public Transform tailHolder; // si la cola está agarrada
-
-        public float Tension { get; private set; }         // ratio de estiramiento 0..n
+        public override float Tension => _tension;
+        float _tension;
         public bool IsTense => Tension > tenseThreshold;
         public float tenseThreshold = 1.12f;
-        public int RemainingTailSegments => pins.Count > 0 ? (particleCount - 1 - pins[pins.Count - 1].index) : particleCount - 1;
-
-        public System.Action onTensionEvent;
+        public override int RemainingTailSegments => pins.Count > 0 ? (particleCount - 1 - pins[pins.Count - 1].index) : particleCount - 1;
 
         class Pin { public int index; public Vector3 pos; }
         readonly List<Pin> pins = new List<Pin>();
@@ -116,11 +112,11 @@ namespace SutureTrainer
         {
             // estiramiento del tramo entre el ancla y el primer pin (o cola sujeta)
             int end = pins.Count > 0 ? pins[0].index : (tailHolder != null ? particleCount - 1 : -1);
-            if (end <= 0) { Tension = 0f; SetTenseVisual(false); return; }
+            if (end <= 0) { _tension = 0f; SetTenseVisual(false); return; }
             Vector3 a = p[0], b = p[end];
             float direct = Vector3.Distance(a, b);
             float rest = segLen * end;
-            Tension = direct / Mathf.Max(rest, 1e-4f);
+            _tension = direct / Mathf.Max(rest, 1e-4f);
             bool tense = Tension > tenseThreshold;
             SetTenseVisual(tense);
             if (tense && Time.time - lastTensionEvent > 1.2f)
@@ -157,7 +153,7 @@ namespace SutureTrainer
         }
 
         /// <summary>Fija el hilo pasando por los orificios de entrada y salida.</summary>
-        public void PinThroughStitch(Vector3 exitHole, Vector3 entryHole)
+        public override void PinThroughStitch(Vector3 exitHole, Vector3 entryHole)
         {
             int i1 = NearestFreeParticle(exitHole);
             int i2 = Mathf.Min(i1 + 3, particleCount - 2);
@@ -180,16 +176,16 @@ namespace SutureTrainer
         }
 
         /// <summary>Colapsa los pines del último punto hacia un punto (cinchar).</summary>
-        public void CinchTo(Vector3 point)
+        public override void CinchTo(Vector3 point)
         {
             int start = Mathf.Max(0, pins.Count - 2); // solo el último par
             for (int i = start; i < pins.Count; i++)
                 pins[i].pos = point + Random.insideUnitSphere * 0.004f;
         }
 
-        public void ClearPins() => pins.Clear();
-        public bool HasPins => pins.Count > 0;
-        public Vector3 TailParticlePos => p != null ? p[particleCount - 1] : transform.position;
-        public Vector3 ParticleAt(float t01) => p[Mathf.Clamp(Mathf.RoundToInt(t01 * (particleCount - 1)), 0, particleCount - 1)];
+        public override void ClearPins() => pins.Clear();
+        public override bool HasPins => pins.Count > 0;
+        public override Vector3 TailParticlePos => p != null ? p[particleCount - 1] : transform.position;
+        public override Vector3 ParticleAt(float t01) => p[Mathf.Clamp(Mathf.RoundToInt(t01 * (particleCount - 1)), 0, particleCount - 1)];
     }
 }

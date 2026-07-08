@@ -27,12 +27,24 @@ namespace SutureTrainer
         public bool Secondary { get; private set; }  // botón secundario (B/Y)
         public bool TriggerPressed => Trigger > 0.7f;
 
+        // Pose de apuntado (aim/pointer) para láser de menús; si el runtime no
+        // la expone, se aproxima inclinando la pose del dispositivo.
+        public Vector3 AimWorldPos { get; private set; }
+        public Quaternion AimWorldRot { get; private set; }
+        [Tooltip("Corrección de cabeceo si no hay pose de puntero nativa.")]
+        public float aimFallbackPitch = 45f;
+
         InputAction _posAction;
         InputAction _rotAction;
         InputAction _triggerAction;
         InputAction _gripAction;
         InputAction _primaryAction;
         InputAction _secondaryAction;
+        InputAction _aimPosAction;
+        InputAction _aimRotAction;
+        bool _hasAim;
+        Vector3 _rawAimPos;
+        Quaternion _rawAimRot = Quaternion.identity;
         UnityEngine.XR.InputDevice _legacyDevice;
         Vector3 _smPos;
         Quaternion _smRot = Quaternion.identity;
@@ -47,6 +59,10 @@ namespace SutureTrainer
             _gripAction = new InputAction(binding: $"<XRController>{hand}/grip");
             _primaryAction = new InputAction(binding: $"<XRController>{hand}/primaryButton");
             _secondaryAction = new InputAction(binding: $"<XRController>{hand}/secondaryButton");
+            _aimPosAction = new InputAction(binding: $"<XRController>{hand}/pointerPosition");
+            _aimRotAction = new InputAction(binding: $"<XRController>{hand}/pointerRotation");
+            _aimPosAction.Enable();
+            _aimRotAction.Enable();
             _posAction.Enable();
             _rotAction.Enable();
             _triggerAction.Enable();
@@ -63,6 +79,8 @@ namespace SutureTrainer
             _gripAction?.Disable();
             _primaryAction?.Disable();
             _secondaryAction?.Disable();
+            _aimPosAction?.Disable();
+            _aimRotAction?.Disable();
         }
 
         void Update()
@@ -110,6 +128,13 @@ namespace SutureTrainer
             grip = _gripAction.ReadValue<float>();
             prim = _primaryAction.IsPressed();
             Secondary = _secondaryAction.IsPressed();
+
+            _hasAim = _aimRotAction.activeControl != null;
+            if (_hasAim)
+            {
+                _rawAimPos = _aimPosAction.ReadValue<Vector3>();
+                _rawAimRot = _aimRotAction.ReadValue<Quaternion>();
+            }
             return true;
         }
 
@@ -134,6 +159,22 @@ namespace SutureTrainer
             Trigger = trig;
             Grip = grip;
             Clutch = prim;
+
+            // pose de apuntado
+            if (_hasAim)
+            {
+                if (trackingSpace != null)
+                {
+                    AimWorldPos = trackingSpace.TransformPoint(_rawAimPos);
+                    AimWorldRot = trackingSpace.rotation * _rawAimRot;
+                }
+                else { AimWorldPos = _rawAimPos; AimWorldRot = _rawAimRot; }
+            }
+            else
+            {
+                AimWorldPos = WorldPos;
+                AimWorldRot = WorldRot * Quaternion.Euler(aimFallbackPitch, 0f, 0f);
+            }
         }
 
         public void Haptic(float amplitude = 0.4f, float duration = 0.05f)

@@ -154,6 +154,7 @@ namespace SutureTrainer
                     best.AttachTo(jawAnchor, this);
                     Held = best;
                     master.Haptic(0.6f, 0.06f);
+                    AudioFX.Click();
                 }
             }
             else if (open && Held != null)

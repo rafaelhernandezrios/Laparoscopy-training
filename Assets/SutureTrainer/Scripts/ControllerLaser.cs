@@ -50,8 +50,8 @@ namespace SutureTrainer
             if (!active || master == null || !master.IsTracked) { if (lr != null) lr.enabled = false; return; }
             lr.enabled = true;
 
-            Vector3 origin = master.WorldPos;
-            Vector3 dir = master.WorldRot * Vector3.forward;
+            Vector3 origin = master.AimWorldPos;
+            Vector3 dir = master.AimWorldRot * Vector3.forward;
             Vector3 end = origin + dir * maxDistance;
 
             WorldButton hit = null;
@@ -70,7 +70,10 @@ namespace SutureTrainer
 
             bool trig = master.TriggerPressed;
             if (trig && !lastTrigger && hovered != null)
+            {
+                AudioFX.Click();
                 hovered.Click();
+            }
             lastTrigger = trig;
 
             lr.SetPosition(0, origin);

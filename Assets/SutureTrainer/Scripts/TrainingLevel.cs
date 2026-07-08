@@ -48,11 +48,19 @@ namespace SutureTrainer
             if (hud != null) hud.SetObjective(text);
         }
 
-        protected void FlashInfo(string msg) { if (hud != null) hud.Flash(msg, new Color(0.4f, 1f, 0.5f)); }
+        protected void FlashInfo(string msg)
+        {
+            if (hud != null) hud.Flash(msg, new Color(0.4f, 1f, 0.5f));
+            AudioFX.Success();
+        }
+
         protected void FlashError(string msg)
         {
             if (hud != null) hud.Flash(msg, new Color(1f, 0.35f, 0.3f));
             Metrics.AddError(msg);
+            AudioFX.Error();
+            leftArm?.master?.Haptic(0.9f, 0.2f);
+            rightArm?.master?.Haptic(0.9f, 0.2f);
         }
 
         protected void Finish()
@@ -63,6 +71,8 @@ namespace SutureTrainer
             if (leftArm != null) leftArm.frozen = true;
             if (rightArm != null) rightArm.frozen = true;
             var score = Metrics.Evaluate(parTimeSec, parPathMeters, maxErrors);
+            Metrics.Export(score);
+            AudioFX.Complete();
             if (results != null) results.Show(score);
             var laser = FindFirstObjectByType<ControllerLaser>();
             if (laser != null) laser.SetActive(true);
@@ -84,13 +94,26 @@ namespace SutureTrainer
             return needle;
         }
 
-        protected VerletThread SpawnThread(SutureNeedle needle)
+        /// <summary>
+        /// Fábrica de hilo intercambiable: asignar aquí una implementación
+        /// alternativa (p. ej. Obi Rope) antes de que carguen los niveles.
+        /// </summary>
+        public static System.Func<GameObject, ThreadBase> ThreadFactory;
+
+        protected ThreadBase SpawnThread(SutureNeedle needle)
         {
             var go = new GameObject("SutureThread");
             go.transform.SetParent(fieldRoot, false);
-            var th = go.AddComponent<VerletThread>();
+            ThreadBase th = ThreadFactory != null ? ThreadFactory(go) : go.AddComponent<VerletThread>();
             th.anchor = needle.Tail;
-            th.onTensionEvent += () => { if (!Finished) Metrics.AddTensionEvent(); };
+            th.onTensionEvent += () =>
+            {
+                if (Finished) return;
+                Metrics.AddTensionEvent();
+                AudioFX.Tension();
+                leftArm?.master?.Haptic(0.7f, 0.15f);
+                rightArm?.master?.Haptic(0.7f, 0.15f);
+            };
             return th;
         }
 
