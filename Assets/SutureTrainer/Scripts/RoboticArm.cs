@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace SutureTrainer
 {
@@ -32,6 +33,14 @@ namespace SutureTrainer
         public Vector3 workspaceExtents = new Vector3(0.45f, 0.30f, 0.35f);
         public float maxJawAngle = 28f;
         public float shaftRadius = 0.008f;
+
+        [Header("Agarre con el robot (Touch sin botones)")]
+        [Tooltip("Con el Touch, asume mandíbulas cerradas y agarra por proximidad (hasta que haya botones).")]
+        public bool assumeGraspWithTouch = true;
+        [Tooltip("Radio de agarre automático en modo Touch (m).")]
+        public float autoGrabRadius = 0.05f;
+        [Tooltip("Tecla para SOLTAR lo agarrado en modo Touch (teclado, Input System nuevo).")]
+        public Key touchReleaseKey = Key.G;
 
         [HideInInspector] public bool frozen;
 
@@ -122,9 +131,14 @@ namespace SutureTrainer
             shaft.localScale = new Vector3(shaftRadius * 2f, len * 0.5f, shaftRadius * 2f);
         }
 
+        // Con el Touch (sin botones) asumimos las mandíbulas cerradas.
+        bool TouchAutoGrasp =>
+            assumeGraspWithTouch && master != null &&
+            master.ActiveBackend == MasterInput.Backend.TouchHaptic;
+
         void UpdateJaws()
         {
-            JawCloseness = frozen ? JawCloseness : master.Trigger;
+            JawCloseness = frozen ? JawCloseness : (TouchAutoGrasp ? 1f : master.Trigger);
             float open = Mathf.Lerp(maxJawAngle, 0f, JawCloseness);
             if (jawA != null) jawA.localRotation = Quaternion.Euler(-open, 0f, 0f);
             if (jawB != null) jawB.localRotation = Quaternion.Euler(open, 0f, 0f);
@@ -133,38 +147,52 @@ namespace SutureTrainer
         void UpdateGrasp()
         {
             if (frozen) return;
+
+            // Modo robot: agarra por proximidad de forma continua; suelta con tecla.
+            if (TouchAutoGrasp)
+            {
+                if (Held == null) TryGrab(autoGrabRadius);
+                else if (touchReleaseKey != Key.None && Keyboard.current != null &&
+                         Keyboard.current[touchReleaseKey].wasPressedThisFrame)
+                {
+                    Held.Detach(); Held = null; master.Haptic(0.25f, 0.04f);
+                }
+                return;
+            }
+
+            // Modo mando: agarrar al cerrar, soltar al abrir.
             bool closed = JawCloseness > 0.72f;
             bool open = JawCloseness < 0.35f;
-
-            if (closed && !_wasClosed && Held == null)
-            {
-                Collider[] hits = Physics.OverlapSphere(TipPos, 0.035f);
-                Graspable best = null; float bestD = float.MaxValue;
-                foreach (var h in hits)
-                {
-                    var g = h.GetComponentInParent<Graspable>();
-                    if (g == null || g.IsHeld) continue;
-                    float d = Vector3.Distance(g.transform.position, TipPos);
-                    // punto más cercano del collider cuenta también
-                    d = Mathf.Min(d, Vector3.Distance(h.ClosestPoint(TipPos), TipPos));
-                    if (d < bestD) { bestD = d; best = g; }
-                }
-                if (best != null)
-                {
-                    best.AttachTo(jawAnchor, this);
-                    Held = best;
-                    master.Haptic(0.6f, 0.06f);
-                    AudioFX.Click();
-                }
-            }
+            if (closed && !_wasClosed && Held == null) TryGrab(0.035f);
             else if (open && Held != null)
             {
-                Held.Detach();
-                Held = null;
-                master.Haptic(0.25f, 0.04f);
+                Held.Detach(); Held = null; master.Haptic(0.25f, 0.04f);
             }
             if (closed) _wasClosed = true;
             else if (open) _wasClosed = false;
+        }
+
+        bool TryGrab(float radius)
+        {
+            Collider[] hits = Physics.OverlapSphere(TipPos, radius);
+            Graspable best = null; float bestD = float.MaxValue;
+            foreach (var h in hits)
+            {
+                var g = h.GetComponentInParent<Graspable>();
+                if (g == null || g.IsHeld) continue;
+                float d = Vector3.Distance(g.transform.position, TipPos);
+                d = Mathf.Min(d, Vector3.Distance(h.ClosestPoint(TipPos), TipPos));
+                if (d < bestD) { bestD = d; best = g; }
+            }
+            if (best != null)
+            {
+                best.AttachTo(jawAnchor, this);
+                Held = best;
+                master.Haptic(0.6f, 0.06f);
+                AudioFX.Click();
+                return true;
+            }
+            return false;
         }
 
         void AccumulatePath()

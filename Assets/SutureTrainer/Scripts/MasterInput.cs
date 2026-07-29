@@ -13,10 +13,38 @@ namespace SutureTrainer
     /// </summary>
     public class MasterInput : MonoBehaviour
     {
+        public enum Backend
+        {
+            QuestController, // mando de VR (comportamiento original)
+            TouchHaptic      // 3D Systems Touch vía OpenHaptics (fuerza real)
+        }
+
+        [Header("Fuente de entrada")]
+        [Tooltip("Backend por defecto de esta mano. Se puede conmutar en runtime con toggleKey o SetBackend().")]
+        public Backend backend = Backend.QuestController;
+        [Tooltip("Tecla para conmutar Quest <-> Touch en el editor/PC (opcional). Usa el Input System nuevo.")]
+        public Key toggleKey = Key.None;
+
         public XRNode node = XRNode.RightHand;
         [Tooltip("Transform del Camera Offset del XR Origin (espacio de tracking).")]
         public Transform trackingSpace;
         [Range(0.05f, 1f)] public float smoothing = 0.35f;
+
+        [Header("Calibración Touch (dispositivo -> mundo)")]
+        [Tooltip("Ancla del Touch en el mundo. Si se deja vacío, se ancla donde esté el instrumento al conmutar (la posición buena del mando).")]
+        public Transform touchHome;
+        [Tooltip("Ajuste fino opcional del origen respecto al ancla (por defecto cero).")]
+        public Vector3 touchNudge = Vector3.zero;
+        [Tooltip("Usar la orientación del gimbal del stylus. Apagado por defecto (el gimbal no está conectado): el instrumento mantiene orientación fija.")]
+        public bool useDeviceOrientation = false;
+        [Tooltip("Amplifica el volumen de trabajo del stylus (~16cm) hacia el campo quirúrgico.")]
+        public float touchWorkspaceScale = 2.5f;
+        [Tooltip("Escala fuerza de mundo -> fuerza del dispositivo (Touch ~3.3 N máx).")]
+        public float touchForceScale = 1f;
+        [Tooltip("Fuerza (N) que produce vibración máxima como fallback en el mando Quest.")]
+        public float questForceForFullRumble = 3.0f;
+
+        public Backend ActiveBackend => backend;
 
         public bool IsTracked { get; private set; }
         public Vector3 WorldPos { get; private set; }
@@ -85,6 +113,36 @@ namespace SutureTrainer
 
         void Update()
         {
+            if (toggleKey != Key.None && Keyboard.current != null &&
+                Keyboard.current[toggleKey].wasPressedThisFrame)
+                SetBackend(backend == Backend.QuestController ? Backend.TouchHaptic : Backend.QuestController);
+
+            // --- Backend Touch (3D Systems / OpenHaptics) ---
+            if (backend == Backend.TouchHaptic)
+            {
+                // ancla la pose donde está el instrumento al conmutar (posición buena)
+                if (!_touchAnchorSet) CaptureTouchAnchor();
+                TouchDevice.AnchorPos = _touchAnchorPos;
+                TouchDevice.AnchorRot = _touchAnchorRot;
+                TouchDevice.LocalOffset = touchNudge;
+                TouchDevice.WorkspaceScale = touchWorkspaceScale;
+                TouchDevice.ForceScale = touchForceScale;
+
+                if (TouchDevice.TryReadPose(out Vector3 tPos, out Quaternion tRot, out float tTrig, out bool tSec))
+                {
+                    if (!useDeviceOrientation) tRot = _touchAnchorRot; // orientación fija
+                    ApplyWorldPose(tPos, tRot, tTrig, 0f, tSec);
+                    return;
+                }
+                // Touch seleccionado pero no disponible: sin tracking (no cae al mando).
+                IsTracked = false;
+                return;
+            }
+
+            // al usar el mando, olvida el ancla para recapturarla si se vuelve a Touch
+            _touchAnchorSet = false;
+
+            // --- Backend Quest (comportamiento original) ---
             if (TryReadInputSystem(out Vector3 rawPos, out Quaternion rawRot, out float trig, out float grip, out bool prim))
             {
                 ApplyPose(rawPos, rawRot, trig, grip, prim);
@@ -177,10 +235,99 @@ namespace SutureTrainer
             }
         }
 
+        // Aplica una pose que YA viene en espacio de mundo (backend Touch).
+        void ApplyWorldPose(Vector3 wp, Quaternion wr, float trig, float grip, bool clutch)
+        {
+            if (!_hasPose) { _smPos = wp; _smRot = wr; _hasPose = true; }
+            float t = 1f - Mathf.Pow(1f - smoothing, Time.deltaTime * 90f);
+            _smPos = Vector3.Lerp(_smPos, wp, t);
+            _smRot = Quaternion.Slerp(_smRot, wr, t);
+
+            WorldPos = _smPos;
+            WorldRot = _smRot;
+            Trigger = trig;
+            Grip = grip;
+            Clutch = clutch;
+            Secondary = false;
+
+            AimWorldPos = WorldPos;
+            AimWorldRot = WorldRot * Quaternion.Euler(aimFallbackPitch, 0f, 0f);
+            IsTracked = true;
+        }
+
+        public void SetBackend(Backend b)
+        {
+            backend = b;
+            _hasPose = false;
+            _touchAnchorSet = false;                              // recaptura el ancla
+            if (b == Backend.TouchHaptic) TouchDevice.Recenter(); // arranca en el ancla
+        }
+
+        RoboticArm _armCache;
+        bool _armSearched;
+        Vector3 _touchAnchorPos;
+        Quaternion _touchAnchorRot = Quaternion.identity;
+        bool _touchAnchorSet;
+
+        // Fija el ancla del Touch (una vez por entrada al modo): el override
+        // touchHome si está puesto; si no, la posición ACTUAL del instrumento
+        // que maneja este MasterInput (la misma que tenías con el mando), de
+        // modo que al conmutar el instrumento se queda donde estaba y se mueve
+        // desde ahí. El brazo se localiza una vez en runtime (sin reconstruir).
+        void CaptureTouchAnchor()
+        {
+            _touchAnchorSet = true;
+
+            if (touchHome != null)
+            {
+                _touchAnchorPos = touchHome.position;
+                _touchAnchorRot = touchHome.rotation;
+                return;
+            }
+
+            if (!_armSearched)
+            {
+                _armSearched = true;
+                foreach (var a in FindObjectsByType<RoboticArm>(FindObjectsSortMode.None))
+                    if (a.master == this) { _armCache = a; break; }
+            }
+
+            _touchAnchorRot = trackingSpace != null ? trackingSpace.rotation : Quaternion.identity;
+            if (_armCache != null && _armCache.wrist != null) _touchAnchorPos = _armCache.wrist.position;
+            else if (_armCache != null) _touchAnchorPos = _armCache.workspaceCenter;
+            else _touchAnchorPos = trackingSpace != null ? trackingSpace.position : Vector3.zero;
+        }
+
+        /// <summary>
+        /// Envía una fuerza de mundo (N) a la mano. En Touch es fuerza real en
+        /// el stylus; en Quest se traduce a vibración proporcional (fallback).
+        /// La llama InstrumentHaptics cada frame.
+        /// </summary>
+        public void SendForce(Vector3 worldForce)
+        {
+            if (backend == Backend.TouchHaptic)
+            {
+                TouchDevice.SetForceWorld(worldForce);
+                return;
+            }
+            // Fallback Quest: magnitud -> amplitud de vibración
+            float a = Mathf.Clamp01(worldForce.magnitude / Mathf.Max(0.01f, questForceForFullRumble));
+            if (a > 0.03f && _legacyDevice.isValid)
+                _legacyDevice.SendHapticImpulse(0u, a * 0.8f, Time.deltaTime + 0.02f);
+        }
+
         public void Haptic(float amplitude = 0.4f, float duration = 0.05f)
         {
+            if (backend == Backend.TouchHaptic)
+            {
+                // pulso breve de fuerza a lo largo del eje del stylus
+                TouchDevice.SetForceWorld(WorldRot * (Vector3.forward * amplitude * 2.5f));
+                return;
+            }
             if (_legacyDevice.isValid)
                 _legacyDevice.SendHapticImpulse(0u, amplitude, duration);
         }
+
+        void OnDestroy() { TouchDevice.Shutdown(); }
     }
 }

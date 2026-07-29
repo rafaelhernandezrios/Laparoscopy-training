@@ -123,6 +123,10 @@ namespace SutureTrainer.EditorTools
 
             var masterR = mgr.AddComponent<MasterInput>();
             masterR.node = XRNode.RightHand; masterR.trackingSpace = camOffset;
+            // Mano derecha conmutable Quest <-> Touch. Por defecto Quest (para no
+            // romper si el Touch no está); pulsa F1 en runtime para cambiar, o
+            // fija backend = TouchHaptic en el inspector / SceneBuilder.
+            masterR.toggleKey = UnityEngine.InputSystem.Key.F1;
             var masterL = mgr.AddComponent<MasterInput>();
             masterL.node = XRNode.LeftHand; masterL.trackingSpace = camOffset;
 
@@ -322,6 +326,17 @@ namespace SutureTrainer.EditorTools
             arm.jawB = jawB;
             arm.jawAnchor = anchor;
             arm.workspaceCenter = field.position + Vector3.up * 0.15f;
+
+            // Retroalimentación háptica de fuerza en el instrumento derecho
+            // (activa de verdad cuando esa mano usa el Touch; en Quest vibra).
+            if (right)
+            {
+                var haptics = root.AddComponent<InstrumentHaptics>();
+                haptics.arm = arm;
+                haptics.master = master;   // el tejido se autolocaliza al cargar el nivel
+                haptics.enableTissue = true;
+                haptics.enableTrocar = true;
+            }
             return arm;
         }
 
