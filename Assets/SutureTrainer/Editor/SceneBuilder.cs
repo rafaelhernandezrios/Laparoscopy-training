@@ -145,6 +145,16 @@ namespace SutureTrainer.EditorTools
                 var armR = BuildArm(true, masterR, field);
                 metrics.leftArm = armL; metrics.rightArm = armR;
 
+                // Lazo adaptativo. El controlador arranca en d = 0.5, que
+                // reproduce exactamente la configuración de serie, así que
+                // estando presente no cambia nada por sí solo. La fuente de
+                // carga queda desactivada: actívala (y elige UDP o Replay) para
+                // cerrar el lazo.
+                mgr.AddComponent<AdaptiveDifficultyController>();
+                var load = mgr.AddComponent<LoadSource>();
+                load.mode = LoadSource.Mode.Replay;
+                load.enabled = false;
+
                 var hud = BuildHUD();
                 var results = BuildResultsPanel();
 
