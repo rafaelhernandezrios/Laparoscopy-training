@@ -21,11 +21,13 @@ Sistema de entrenamiento tipo consola da Vinci: los controladores del Quest act�
 
 | Acción | Control |
 |---|---|
-| Mover instrumento | Mover el controlador (escalado 0.75x, con filtro de temblor) |
+| Mover instrumento | Mover el controlador (filtro de temblor; en Relativo escala 0.75x) |
 | Rotar muñeca (EndoWrist) | Rotar el controlador |
 | Cerrar mandíbulas / agarrar | Gatillo |
-| Clutch (reposicionar mano sin mover instrumento) | Botón A (der.) / X (izq.) |
+| Clutch (congelar instrumento y reposicionar la mano) | Botón A (der.) / X (izq.) — funciona en Absoluto y Relativo |
 | Menús | Láser del controlador derecho + gatillo |
+
+**Hápticos (Quest):** pulso al agarrar/soltar aguja, al activar clutch, al contactar/hundir la punta en el tejido, y en tensión/errores. Intensidad de tejido ≈ profundidad de la punta.
 
 ## Niveles
 
@@ -41,8 +43,8 @@ Por nivel: tiempo, recorrido total de las puntas (economía de movimiento), erro
 
 ## Arquitectura (Assets/SutureTrainer/Scripts)
 
-- `MasterInput` / `RoboticArm` — teleoperación maestro-esclavo con clutch, escalado y pivote en trócar.
-- `SutureNeedle`, `VerletThread`, `TissuePatch` — aguja curva procedural, hilo con física Verlet (pines, deslizamiento, tensión, cincha), tejido deformable.
+- `MasterInput` / `RoboticArm` — teleoperación maestro-esclavo con clutch (Absoluto y Relativo), escalado y pivote en trócar; hápticos vía XR devices.
+- `SutureNeedle`, `VerletThread`, `TissuePatch` — aguja curva procedural, hilo Verlet, tejido deformable + vibración por contacto/presión.
 - `TrainingLevel` + `Level1..5` — lógica de ejercicios.
 - `MetricsRecorder`, `HUD`, `ResultsPanel`, `ControllerLaser`, `WorldButton` — métricas y UI.
 - `Editor/SceneBuilder` — generación automática de materiales y escenas.

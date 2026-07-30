@@ -40,12 +40,17 @@ namespace SutureTrainer
         public float JawCloseness { get; private set; } // 0 abierto, 1 cerrado
         public float PathLength { get; private set; }
 
+        static readonly Vector3 TipForward = new Vector3(0f, 0f, 0.05f);
+
         Vector3 _target;
         Vector3 _lastMaster;
         bool _hasMaster;
         bool _wasClosed;
         Vector3 _lastTip;
         bool _hasTip;
+        bool _wasClutch;
+        Vector3 _absPosOffset;
+        Quaternion _absRotOffset = Quaternion.identity;
 
         void Start()
         {
@@ -57,22 +62,37 @@ namespace SutureTrainer
         {
             if (master == null || wrist == null) return;
 
+            bool clutching = master.IsTracked && master.Clutch && !frozen;
+
             // --- posición objetivo ---
             if (master.IsTracked && !frozen)
             {
                 if (mode == ControlMode.Absoluto)
                 {
-                    // la muñeca del instrumento está EN la mano, con un pequeño
-                    // avance hacia delante como si sostuvieras la herramienta
-                    _target = master.WorldPos + master.WorldRot * new Vector3(0f, 0f, 0.05f);
+                    Vector3 masterTip = master.WorldPos + master.WorldRot * TipForward;
+                    if (clutching)
+                    {
+                        // congelar instrumento: mano se reposiciona libremente
+                        if (!_wasClutch)
+                            master.Haptic(0.2f, 0.03f);
+                    }
+                    else
+                    {
+                        // al soltar clutch, remapea offset para evitar salto
+                        if (_wasClutch)
+                            _absPosOffset = _target - masterTip;
+                        _target = masterTip + _absPosOffset;
+                    }
                 }
                 else
                 {
                     if (!_hasMaster) { _lastMaster = master.WorldPos; _hasMaster = true; }
                     Vector3 delta = master.WorldPos - _lastMaster;
                     _lastMaster = master.WorldPos;
-                    if (!master.Clutch)
+                    if (!clutching)
                         _target += delta * motionScale;
+                    else if (!_wasClutch)
+                        master.Haptic(0.2f, 0.03f);
                 }
             }
             else { _hasMaster = false; }
@@ -91,10 +111,25 @@ namespace SutureTrainer
             {
                 Quaternion goal = master.WorldRot * Quaternion.Euler(rotationOffsetEuler);
                 if (mode == ControlMode.Absoluto)
-                    wrist.rotation = goal;
-                else
+                {
+                    if (clutching)
+                    {
+                        // rotación congelada junto con la posición
+                    }
+                    else
+                    {
+                        if (_wasClutch)
+                            _absRotOffset = wrist.rotation * Quaternion.Inverse(goal);
+                        wrist.rotation = _absRotOffset * goal;
+                    }
+                }
+                else if (!clutching)
+                {
                     wrist.rotation = Quaternion.Slerp(wrist.rotation, goal, 1f - Mathf.Pow(0.0005f, Time.deltaTime));
+                }
             }
+
+            _wasClutch = clutching;
 
             UpdateShaft();
             UpdateJaws();
@@ -153,7 +188,9 @@ namespace SutureTrainer
                 {
                     best.AttachTo(jawAnchor, this);
                     Held = best;
-                    master.Haptic(0.6f, 0.06f);
+                    // aguja u objeto: pulso más fuerte si es SutureNeedle
+                    float amp = best.GetComponent<SutureNeedle>() != null ? 0.7f : 0.55f;
+                    master.Haptic(amp, 0.07f);
                     AudioFX.Click();
                 }
             }

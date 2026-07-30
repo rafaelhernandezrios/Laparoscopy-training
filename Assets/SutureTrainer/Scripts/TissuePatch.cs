@@ -24,6 +24,7 @@ namespace SutureTrainer
         Mesh mesh;
         Vector3[] baseVerts, verts;
         float lastBadPuncture = -10f;
+        bool wasContactingTissue;
 
         public float SurfaceY => transform.position.y;
         public Vector3 WoundCenter => transform.position;
@@ -96,23 +97,56 @@ namespace SutureTrainer
 
         void Update()
         {
-            if (trackedNeedle == null) { Recover(); return; }
+            if (trackedNeedle == null)
+            {
+                wasContactingTissue = false;
+                Recover();
+                return;
+            }
             Vector3 tip = trackedNeedle.TipPos;
             Vector3 local = transform.InverseTransformPoint(tip);
             bool overPad = Mathf.Abs(local.x) < width * 0.5f && Mathf.Abs(local.z) < depth * 0.5f;
+            bool contacting = overPad && local.y < 0.02f;
 
-            if (overPad && local.y < 0.02f)
+            if (contacting)
             {
                 Deform(local);
+                ApplyTissueHaptics(local, contacting);
                 if (local.y < -0.008f && !punctureAllowed && Time.time - lastBadPuncture > 1.5f)
                 {
                     lastBadPuncture = Time.time;
                     onBadPuncture?.Invoke(tip);
                 }
             }
-            else Recover();
+            else
+            {
+                wasContactingTissue = false;
+                Recover();
+            }
             mesh.vertices = verts;
             mesh.RecalculateNormals();
+        }
+
+        /// <summary>
+        /// Primer approach: vibración proporcional a presión/profundidad de la
+        /// punta en el tejido, en el mando que sostiene la aguja.
+        /// </summary>
+        void ApplyTissueHaptics(Vector3 localTip, bool contacting)
+        {
+            if (trackedNeedle == null || !trackedNeedle.Grasp.IsHeld) return;
+            var holder = trackedNeedle.Grasp.Holder;
+            var input = holder != null ? holder.master : null;
+            if (input == null) return;
+
+            // 0 = roze superficie, 1 = hundida ~3 cm
+            float depth = Mathf.Clamp01((0.02f - localTip.y) / 0.03f);
+
+            if (contacting && !wasContactingTissue)
+                input.Haptic(0.35f + depth * 0.25f, 0.06f); // primer contacto
+            else if (depth > 0.15f)
+                input.HapticSoft(0.12f + depth * 0.55f); // resistencia continua
+
+            wasContactingTissue = contacting;
         }
 
         void Deform(Vector3 localTip)
