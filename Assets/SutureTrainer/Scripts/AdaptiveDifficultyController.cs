@@ -71,20 +71,34 @@ namespace SutureTrainer
         readonly Queue<KeyValuePair<float, int>> _errorHistory =
             new Queue<KeyValuePair<float, int>>();
 
-        // --- proyección d -> parámetros (extremos que encierran los valores de
-        //     serie, así que d = 0.5 reproduce la configuración original) ---
-        struct Knob { public float easy, hard; public Knob(float e, float h) { easy = e; hard = h; } }
+        // --- proyección d -> parámetros ---
+        // Tres puntos por parámetro: más fácil (d=0), valor de serie (d=0.5) y
+        // más difícil (d=1), interpolados por tramos. El valor de serie NO es el
+        // punto medio del rango en 6 de los 8 parámetros, así que un lerp de dos
+        // puntos desplazaría la plataforma en el ajuste neutro. Con esto,
+        // d = 0.5 reproduce exactamente la configuración original.
+        struct Knob
+        {
+            public float easy, ships, hard;
+            public Knob(float e, float s, float h) { easy = e; ships = s; hard = h; }
+        }
 
-        static readonly Knob KMotionScale = new Knob(0.45f, 1.05f);   // serie 0.75
-        static readonly Knob KHapticGain  = new Knob(1.40f, 0.60f);   // serie 1.00
-        static readonly Knob KTenseThresh = new Knob(1.45f, 0.95f);   // serie 1.12
-        static readonly Knob KPunctureRad = new Knob(0.040f, 0.018f); // serie 0.028
-        static readonly Knob KRingRad     = new Knob(0.060f, 0.032f); // serie 0.045
-        static readonly Knob KParTime     = new Knob(180f, 90f);      // serie 120
-        static readonly Knob KParPath     = new Knob(18f, 9f);        // serie 12
-        static readonly Knob KMaxErrors   = new Knob(3f, 0f);         // serie 1
+        static readonly Knob KMotionScale = new Knob(0.45f,  0.75f,  1.05f);
+        static readonly Knob KHapticGain  = new Knob(1.40f,  1.00f,  0.60f);
+        static readonly Knob KTenseThresh = new Knob(1.45f,  1.12f,  0.95f);
+        static readonly Knob KPunctureRad = new Knob(0.040f, 0.028f, 0.018f);
+        static readonly Knob KRingRad     = new Knob(0.060f, 0.045f, 0.032f);
+        static readonly Knob KParTime     = new Knob(180f,   120f,   90f);
+        static readonly Knob KParPath     = new Knob(18f,    12f,    9f);
+        static readonly Knob KMaxErrors   = new Knob(3f,     1f,     0f);
 
-        static float Lerp(Knob k, float d) => k.easy + (k.hard - k.easy) * Mathf.Clamp01(d);
+        static float Lerp(Knob k, float d)
+        {
+            d = Mathf.Clamp01(d);
+            return d <= 0.5f
+                ? Mathf.Lerp(k.easy, k.ships, d / 0.5f)
+                : Mathf.Lerp(k.ships, k.hard, (d - 0.5f) / 0.5f);
+        }
 
         void Awake()
         {
