@@ -31,6 +31,9 @@ namespace SutureTrainer
             if (hud != null) hud.SetTitle(LevelTitle);
             Metrics.StartRun();
             Setup();
+            // Los props del ejercicio ya existen: el lazo adaptativo puede fijar
+            // radios de diana y umbrales de puntuación para este intento.
+            AdaptiveDifficultyController.I?.ApplyBoundaryParameters();
         }
 
         void Update()
@@ -72,6 +75,7 @@ namespace SutureTrainer
             if (rightArm != null) rightArm.frozen = true;
             var score = Metrics.Evaluate(parTimeSec, parPathMeters, maxErrors);
             Metrics.Export(score);
+            AdaptiveDifficultyController.I?.ExportTrace();
             AudioFX.Complete();
             if (results != null) results.Show(score);
             var laser = FindFirstObjectByType<ControllerLaser>();

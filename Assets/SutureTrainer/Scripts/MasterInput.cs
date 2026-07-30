@@ -299,12 +299,23 @@ namespace SutureTrainer
         }
 
         /// <summary>
+        /// Ganancia global de la salida háptica. La mueve
+        /// AdaptiveDifficultyController como guía asistiva: >1 refuerza las
+        /// señales de contacto y error cuando el aprendiz está sobrecargado,
+        /// &lt;1 las retira cuando va sobrado. Afecta tanto a la fuerza continua
+        /// del Touch como a los pulsos.
+        /// </summary>
+        public static float HapticGain = 1f;
+
+        /// <summary>
         /// Envía una fuerza de mundo (N) a la mano. En Touch es fuerza real en
         /// el stylus; en Quest se traduce a vibración proporcional (fallback).
         /// La llama InstrumentHaptics cada frame.
         /// </summary>
         public void SendForce(Vector3 worldForce)
         {
+            worldForce *= HapticGain;
+
             if (backend == Backend.TouchHaptic)
             {
                 TouchDevice.SetForceWorld(worldForce);
@@ -318,6 +329,8 @@ namespace SutureTrainer
 
         public void Haptic(float amplitude = 0.4f, float duration = 0.05f)
         {
+            amplitude = Mathf.Clamp01(amplitude * HapticGain);
+
             if (backend == Backend.TouchHaptic)
             {
                 // pulso breve de fuerza a lo largo del eje del stylus
