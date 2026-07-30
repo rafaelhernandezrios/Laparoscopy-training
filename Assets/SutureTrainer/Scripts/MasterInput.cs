@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.XR;
@@ -49,6 +50,8 @@ namespace SutureTrainer
         Vector3 _smPos;
         Quaternion _smRot = Quaternion.identity;
         bool _hasPose;
+        float _lastSoftHapticTime = -1f;
+        static readonly List<UnityEngine.XR.InputDevice> _hapticScratch = new List<UnityEngine.XR.InputDevice>(4);
 
         void OnEnable()
         {
@@ -177,10 +180,44 @@ namespace SutureTrainer
             }
         }
 
+        /// <summary>
+        /// Ganancia global de los hápticos. La usa AdaptiveDifficultyController
+        /// como guía asistiva: >1 refuerza las señales de contacto/error cuando
+        /// el aprendiz está sobrecargado, &lt;1 las retira cuando va sobrado.
+        /// </summary>
+        public static float HapticGain = 1f;
+
+        /// <summary>Pulso háptico puntual (agarre, evento, error).</summary>
         public void Haptic(float amplitude = 0.4f, float duration = 0.05f)
         {
-            if (_legacyDevice.isValid)
-                _legacyDevice.SendHapticImpulse(0u, amplitude, duration);
+            amplitude = Mathf.Clamp01(amplitude * HapticGain);
+            duration = Mathf.Clamp(duration, 0.01f, 1f);
+
+            _hapticScratch.Clear();
+            InputDevices.GetDevicesAtXRNode(node, _hapticScratch);
+            for (int i = 0; i < _hapticScratch.Count; i++)
+            {
+                var d = _hapticScratch[i];
+                if (d.isValid)
+                    d.SendHapticImpulse(0u, amplitude, duration);
+            }
+
+            // refresca cache legacy por si solo hay un device
+            if (_hapticScratch.Count > 0)
+                _legacyDevice = _hapticScratch[0];
+            else if (!_legacyDevice.isValid)
+                _legacyDevice = InputDevices.GetDeviceAtXRNode(node);
+        }
+
+        /// <summary>
+        /// Vibración suave repetible (llamar desde Update mientras hay contacto).
+        /// Throttle ~25 Hz para no saturar el runtime.
+        /// </summary>
+        public void HapticSoft(float amplitude)
+        {
+            if (Time.unscaledTime - _lastSoftHapticTime < 0.04f) return;
+            _lastSoftHapticTime = Time.unscaledTime;
+            Haptic(Mathf.Clamp01(amplitude), 0.035f);
         }
     }
 }
