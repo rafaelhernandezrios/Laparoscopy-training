@@ -31,14 +31,13 @@ namespace SutureTrainer
         // distancia de trabajo del visor eso es un pelo de uno o dos píxeles,
         // y el hilo parecía no existir aunque la mecánica del punto estuviera
         // funcionando. Los 6 mm de antes sí eran un cabo muy gordo, así que se
-        // deja en 4 mm, el mismo diámetro que el hilo del rig de sutura para
-        // que los dos se vean igual.
-        public float lineWidth = 0.004f;
+        // deja en 2.5 mm, el mismo diámetro que el hilo del rig de sutura para
+        // que los dos se vean igual. 4 mm ya se leía como un cabo, no un hilo.
+        public float lineWidth = 0.0025f;
 
         public override float Tension => _tension;
         float _tension;
-        public bool IsTense => Tension > tenseThreshold;
-        public float tenseThreshold = 1.12f;
+        public bool IsTense => Tension > tenseThreshold;   // umbral en ThreadBase
         public override int RemainingTailSegments => pins.Count > 0 ? (particleCount - 1 - pins[pins.Count - 1].index) : particleCount - 1;
 
         class Pin { public int index; public Vector3 pos; }

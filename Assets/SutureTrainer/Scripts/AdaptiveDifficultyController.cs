@@ -249,7 +249,7 @@ namespace SutureTrainer
             MasterInput.HapticGain = Lerp(KHapticGain, d);
 
             float tt = Lerp(KTenseThresh, d);
-            foreach (var th in FindObjectsByType<VerletThread>(FindObjectsSortMode.None))
+            foreach (var th in FindObjectsByType<ThreadBase>(FindObjectsSortMode.None))
                 th.tenseThreshold = tt;
         }
 

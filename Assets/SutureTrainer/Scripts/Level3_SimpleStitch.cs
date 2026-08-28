@@ -22,7 +22,12 @@ namespace SutureTrainer
                  "Antes se exigía una cola ABSOLUTA, y como el primer pin nace " +
                  "casi al principio del hilo, el primer punto pedía 48 cm de " +
                  "recorrido y los siguientes 11. Ahora los tres piden lo mismo.")]
-        public int pullSegments = 10;
+        //
+        // Bajado de 10 a 5 (~8 cm de tirón). Con 10 había que llevar la aguja
+        // tan lejos que el hilo salía del campo, recto y tenso: en la grabación
+        // del 28-08 se ve saliéndose del encuadre con tensión 1.38. Un punto se
+        // pasa con un tirón corto, no arrastrando el cabo entero.
+        public int pullSegments = 5;
 
         [Tooltip("Cuánto puede apuntar hacia arriba la punta y aun así valer " +
                  "como entrada. 0.1 exigía casi horizontal-o-abajo y costaba " +

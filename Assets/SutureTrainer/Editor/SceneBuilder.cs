@@ -642,6 +642,23 @@ namespace SutureTrainer.EditorTools
                         foreach (var jaw in new[] { jawA, jawB })
                             foreach (var mr in jaw.GetComponentsInChildren<MeshRenderer>(true))
                                 mr.enabled = false;
+
+                        // El vástago y la bola del trócar también.
+                        //
+                        // Son de las primeras versiones, de cuando el
+                        // instrumento entero era geometría procedural. Con la
+                        // pinza importada puesta quedaban ADEMÁS del modelo, y
+                        // se veían como dos tubos cruzando el campo que no
+                        // respondían a nada: la sensación era de tener
+                        // herramienta doble.
+                        //
+                        // Se apaga el RENDERER, no el objeto: RoboticArm sigue
+                        // colocando y escalando el vástago cada frame para el
+                        // pivote en trócar, y desactivarlo rompería esa lógica.
+                        foreach (var mr in shaft.GetComponentsInChildren<MeshRenderer>(true))
+                            mr.enabled = false;
+                        foreach (var mr in trocarVis.GetComponentsInChildren<MeshRenderer>(true))
+                            mr.enabled = false;
                     }
                 }
             }

@@ -51,9 +51,11 @@ namespace SutureTrainer.EditorTools
         /// (0.00125 * FieldScale = 1.98 mm de radio, ~4 mm de diámetro). Es un
         /// cabo gordo para lo que representa, pero un entrenador tiene que
         /// dejar VER lo que hace el hilo; el calibre exacto no se está
-        /// evaluando. Bajar de ~1.5 mm de radio lo hace desaparecer otra vez.
+        /// evaluando. Probado a 1.98 mm de radio se lee ya como una maroma, así
+        /// que se queda en 1.25 (2.5 mm de diámetro): visible sin parecer soga.
+        /// Por debajo de ~1 mm de radio desaparece otra vez.
         /// </summary>
-        const float RopeRadius = 0.00198f;
+        const float RopeRadius = 0.00125f;
 
         /// <summary>
         /// Largo del cabo, en metros del campo.
