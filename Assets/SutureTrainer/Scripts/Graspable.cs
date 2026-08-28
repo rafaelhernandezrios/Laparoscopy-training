@@ -25,7 +25,14 @@ namespace SutureTrainer
         {
             IsHeld = true;
             Holder = holder;
-            if (_rb != null) { _rb.isKinematic = true; _rb.linearVelocity = Vector3.zero; }
+            // El orden importa: Unity rechaza escribir linearVelocity en un
+            // cuerpo ya cinemático ("Setting linear velocity of a kinematic body
+            // is not supported"), así que se frena ANTES de congelarlo.
+            if (_rb != null)
+            {
+                if (!_rb.isKinematic) _rb.linearVelocity = Vector3.zero;
+                _rb.isKinematic = true;
+            }
             transform.SetParent(anchor, true);
             onGrabbed?.Invoke(holder);
         }

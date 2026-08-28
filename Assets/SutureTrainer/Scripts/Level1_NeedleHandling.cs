@@ -49,9 +49,37 @@ namespace SutureTrainer
             var go = new GameObject("GhostNeedle");
             go.transform.SetParent(fieldRoot, false);
             var mesh = ProcMesh.ArcTube(0.055f, 180f, 0.0035f, out _, out _, out _, out _);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var mr = go.AddComponent<MeshRenderer>();
-            if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.ghost;
+
+            var art = ArtSet.I;
+            bool useArt = art != null && art.needle != null;
+
+            if (useArt)
+            {
+                // El fantasma debe tener la MISMA forma y orientación que la
+                // aguja real. Con el arco procedural, alinear lo que se ve no
+                // alinea los transforms que compara Tick(), y la pose resulta
+                // imposible de conseguir.
+                Vector3 offset = ArtSet.ComputeAlignOffset(
+                    art.needle, art.needleScale, art.needleEuler,
+                    mesh.bounds.center) + art.needleOffset;
+
+                var visual = ArtSet.AttachVisual(art.needle, go.transform,
+                                                 art.needleScale, art.needleEuler, offset);
+                if (visual != null && MaterialSet.I != null)
+                {
+                    foreach (var r in visual.GetComponentsInChildren<Renderer>(true))
+                        r.sharedMaterial = MaterialSet.I.ghost;
+                }
+                else useArt = false;
+            }
+
+            if (!useArt || art.showProceduralGuides)
+            {
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var mr = go.AddComponent<MeshRenderer>();
+                if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.ghost;
+            }
+
             return go.transform;
         }
 

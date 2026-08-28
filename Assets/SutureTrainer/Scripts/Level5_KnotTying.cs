@@ -143,6 +143,9 @@ namespace SutureTrainer
                 if (currentThrow + 1 >= wrapsPerThrow.Length)
                 {
                     knotPhase = KnotPhase.None;
+                    // El nudo es lo que cierra la herida: se tensa aquí, no al
+                    // dar la puntada. Antes este nivel nunca la aproximaba.
+                    if (organ != null) organ.Tighten();
                     FlashInfo("¡Nudo completado!");
                     Finish();
                 }

@@ -267,10 +267,12 @@ namespace SutureTrainer
             float pr = Lerp(KPunctureRad, d);
             foreach (var t in FindObjectsByType<PunctureTarget>(FindObjectsSortMode.None))
             {
+                // La dificultad ajusta la TOLERANCIA, no el tamaño dibujado.
+                // Antes rescalaba el marcador a radius*1.6 y con ello volvía a
+                // inflarlo a 45 mm justo después de que el nivel lo creara.
+                // El tope anatómico lo aplica PunctureTarget.EffectiveRadius.
                 t.radius = pr;
-                var marker = t.transform.Find("Marker");
-                if (marker != null)
-                    marker.localScale = new Vector3(pr * 1.6f, 0.004f, pr * 1.6f);
+                t.ApplyVisual();
             }
 
             float rr = Lerp(KRingRad, d);

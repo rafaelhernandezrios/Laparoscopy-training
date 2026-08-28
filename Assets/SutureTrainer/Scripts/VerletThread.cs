@@ -13,12 +13,21 @@ namespace SutureTrainer
     {
         public int particleCount = 70;
         public float totalLength = 1.1f;    // macro (~22 cm reales a 5x)
-        public int constraintIterations = 5;
-        public float damping = 0.985f;
-        public float gravity = 2.5f;
+        // El hilo se enredaba y se quedaba rezagado: con 5 iteraciones los
+        // segmentos se estiran y el cabo se ovilla, y con damping 0.985 sigue
+        // oscilando en vez de asentarse. Más iteraciones = segmentos más
+        // rígidos; menos gravedad = menos comba acumulada; más amortiguación =
+        // se calma antes.
+        public int constraintIterations = 12;
+        public float damping = 0.94f;
+        public float gravity = 1.2f;
         public Material normalMat;
         public Material tenseMat;
-        public float lineWidth = 0.006f;
+        // Ancho del hilo (diámetro del LineRenderer), en metros del campo
+        // magnificado. 6 mm resultaba un cabo muy grueso; se calibra igual que
+        // el hilo del rig de sutura: sutura 4-0 (0.20 mm real) vista al aumento
+        // 5x del campo = 1.0 mm.
+        public float lineWidth = 0.001f;
 
         public override float Tension => _tension;
         float _tension;
@@ -55,7 +64,13 @@ namespace SutureTrainer
             Vector3 a = anchor != null ? anchor.position : transform.position;
             for (int i = 0; i < particleCount; i++)
             {
-                p[i] = a + Vector3.down * (segLen * i * 0.5f) + Random.insideUnitSphere * 0.002f;
+                // Separación COMPLETA, no la mitad.
+                //
+                // Con segLen*0.5 el hilo nacía comprimido al 50% de su longitud
+                // de reposo, así que el solver arrancaba repartiendo ~55 cm de
+                // holgura entre las partículas: eso es lo que lo ovillaba nada
+                // más empezar y lo dejaba rezagado.
+                p[i] = a + Vector3.down * (segLen * i) + Random.insideUnitSphere * 0.001f;
                 pPrev[i] = p[i];
             }
         }

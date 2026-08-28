@@ -14,6 +14,15 @@ namespace SutureTrainer
     {
         public float delay = 0.4f;
 
+        [Tooltip("Altura de ojos, en metros, a la que se coloca al usuario. " +
+                 "El campo quirúrgico está fijo en y = 1.08 m, así que 1.55 lo " +
+                 "deja unos 47 cm por debajo de la vista: postura de consola " +
+                 "cómoda tanto sentado como de pie.\n\n" +
+                 "Antes se conservaba la altura REAL del usuario, así que " +
+                 "sentado el campo quedaba casi a la altura de la cara y de pie " +
+                 "demasiado bajo. Pon 0 para volver a ese comportamiento.")]
+        public float eyeHeight = 1.55f;
+
         XROrigin origin;
         float timer;
         bool done;
@@ -34,7 +43,7 @@ namespace SutureTrainer
         public void Recenter()
         {
             origin.MatchOriginUpCameraForward(Vector3.up, Vector3.forward);
-            float h = origin.Camera.transform.position.y;
+            float h = eyeHeight > 0f ? eyeHeight : origin.Camera.transform.position.y;
             origin.MoveCameraToWorldLocation(new Vector3(0f, h, 0f));
         }
     }

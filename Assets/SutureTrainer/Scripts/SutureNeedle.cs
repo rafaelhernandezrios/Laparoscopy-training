@@ -37,6 +37,25 @@ namespace SutureTrainer
             if (material != null) mr.sharedMaterial = material;
             else if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.needle;
 
+            // Arte importado: se cuelga el modelo real y se apaga el arco
+            // procedural, pero la malla, el collider y los transforms Tip/Tail
+            // siguen siendo los procedurales, que son los que los niveles miden.
+            //
+            // Por eso el modelo se CENTRA sobre el arco procedural: si no
+            // coinciden, se apunta con lo que se ve y la lógica mide otro punto,
+            // y la sutura resulta imposible.
+            if (ArtSet.I != null && ArtSet.I.needle != null)
+            {
+                var art = ArtSet.I;
+                Vector3 offset = ArtSet.ComputeAlignOffset(
+                    art.needle, art.needleScale, art.needleEuler,
+                    mesh.bounds.center) + art.needleOffset;
+
+                var visual = ArtSet.AttachVisual(art.needle, transform,
+                                                 art.needleScale, art.needleEuler, offset);
+                if (visual != null) mr.enabled = art.showProceduralGuides;
+            }
+
             Tip = new GameObject("Tip").transform;
             Tip.SetParent(transform, false);
             Tip.localPosition = tipP;

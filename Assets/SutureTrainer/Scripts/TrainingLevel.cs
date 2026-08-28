@@ -24,6 +24,13 @@ namespace SutureTrainer
 
         protected MetricsRecorder Metrics => MetricsRecorder.I;
 
+        /// <summary>
+        /// Diámetro visible de los marcadores de punción, en metros. Igual que
+        /// el de los SuturePoint del órgano (MarkerRadius 0.003 x 2) para que
+        /// todos los marcadores del campo se vean del mismo tamaño.
+        /// </summary>
+        protected const float MarkerDiameter = 0.006f;
+
         protected virtual string LevelTitle => "Nivel";
 
         void Start()
@@ -158,7 +165,15 @@ namespace SutureTrainer
             disc.name = "Marker";
             Object.Destroy(disc.GetComponent<Collider>());
             disc.transform.SetParent(root.transform, false);
-            disc.transform.localScale = new Vector3(t.radius * 1.6f, 0.004f, t.radius * 1.6f);
+            // El tamaño VISIBLE se desacopla de la tolerancia.
+            //
+            // Antes se escalaba con t.radius (0.028 m de tolerancia de captura),
+            // lo que daba discos de 45 mm: siete veces los marcadores del
+            // órgano y visualmente enormes sobre la incisión. La tolerancia no
+            // se toca —cambiarla alteraría la dificultad calibrada del nivel—,
+            // solo se dibuja del tamaño de los marcadores del rig (6 mm).
+            t.visualDiameter = MarkerDiameter;
+            t.ApplyVisual();
 
             if (MaterialSet.I != null)
                 t.Init(MaterialSet.I.markerIdle, isEntry ? MaterialSet.I.markerEntry : MaterialSet.I.markerExit, MaterialSet.I.markerDone);

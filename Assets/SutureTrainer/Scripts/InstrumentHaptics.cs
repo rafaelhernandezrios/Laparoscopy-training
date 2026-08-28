@@ -62,7 +62,11 @@ namespace SutureTrainer
         [Tooltip("Ganancia global de salida. Bájala si vibra, súbela si se siente flojo.")]
         [Range(0f, 1f)] public float outputGain = 0.3f;
         [Tooltip("Fuerzas por debajo de esto se ignoran (mata el ruido en reposo).")]
-        public float forceDeadzone = 0.12f;
+        // 0.12 N descartaba en silencio TODO contacto suave: con outputGain
+        // 0.30, una fuerza cruda de 0.4 N se queda justo en el límite y
+        // cualquier roce por debajo desaparecía. Se baja para que el contacto
+        // ligero llegue al dispositivo; subir la ganancia es otra decisión.
+        public float forceDeadzone = 0.04f;
         [Tooltip("Suavizado paso-bajo (s). Más alto = más estable pero más 'blando'.")]
         public float forceSmoothTime = 0.05f;
         [Tooltip("Máxima variación de fuerza por segundo (N/s). Limita saltos bruscos.")]
@@ -82,6 +86,9 @@ namespace SutureTrainer
 
         [Header("Diagnóstico")]
         [Tooltip("Escribe en consola tejido/penetración/fuerza para poder regular.")]
+        // Encendido durante la calibración del Touch: sin ver |fTejido| y
+        // |enviado| no hay forma de saber si no se siente porque la fuerza es
+        // débil o porque no se está generando. Apágalo cuando ya esté ajustado.
         public bool debugLog = true;
         float _nextDbg;
         float _lastPen;   // penetración registrada (m)
