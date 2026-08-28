@@ -524,6 +524,19 @@ namespace SutureTrainer.EditorTools
         }
 
         // ------------------------------------------------------------------
+        /// <summary>
+        /// Deja el objeto sin nada que dibujar, conservando su Transform.
+        /// Para primitivas procedurales que un modelo importado sustituye pero
+        /// cuyo transform sigue haciendo falta.
+        /// </summary>
+        static void StripGeometry(GameObject go)
+        {
+            foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
+                Object.DestroyImmediate(mr);
+            foreach (var mf in go.GetComponentsInChildren<MeshFilter>(true))
+                Object.DestroyImmediate(mf);
+        }
+
         static RoboticArm BuildArm(bool right, MasterInput master, Transform field)
         {
             float sx = right ? 1f : -1f;
@@ -652,13 +665,14 @@ namespace SutureTrainer.EditorTools
                         // respondían a nada: la sensación era de tener
                         // herramienta doble.
                         //
-                        // Se apaga el RENDERER, no el objeto: RoboticArm sigue
+                        // Se quita la GEOMETRÍA, no el objeto: RoboticArm sigue
                         // colocando y escalando el vástago cada frame para el
-                        // pivote en trócar, y desactivarlo rompería esa lógica.
-                        foreach (var mr in shaft.GetComponentsInChildren<MeshRenderer>(true))
-                            mr.enabled = false;
-                        foreach (var mr in trocarVis.GetComponentsInChildren<MeshRenderer>(true))
-                            mr.enabled = false;
+                        // pivote en trócar, y desactivar el GameObject rompería
+                        // esa lógica. Se destruyen los componentes en vez de
+                        // apagar el renderer para que no haya forma de que algo
+                        // los vuelva a encender.
+                        StripGeometry(shaft);
+                        StripGeometry(trocarVis);
                     }
                 }
             }
@@ -720,11 +734,21 @@ namespace SutureTrainer.EditorTools
             // del panel, recortado por arriba, así que la guía de fases —que es
             // la que explica la mecánica del punto— no se leía nunca.
             //
-            // Ahora se pone más bajo y algo más lejos, justo pasada la herida, e
-            // inclinado hacia arriba para que mire a los ojos: cae dentro del
-            // mismo vistazo que el campo.
-            root.transform.position = new Vector3(0f, 1.32f, 1.0f);
-            root.transform.rotation = Quaternion.Euler(22f, 0f, 0f);
+            // Ahora se pone más bajo y más lejos, pasada la herida, e inclinado
+            // hacia arriba para que mire a los ojos: cae en el mismo vistazo
+            // que el campo sin taparlo.
+            //
+            // Primer intento fue a 1.0 m y a tamaño completo, y se comía media
+            // pantalla: un panel de 1.5 m visto a un metro abarca 60°. A 1.55 m
+            // y al 68% mide unos 37° de ancho y queda entre 5° y 18° por debajo
+            // del horizonte, mientras el campo está a unos 43°: se leen los dos
+            // sin que uno estorbe al otro.
+            //
+            // Se escala la raíz en vez de recortar el panel para no rehacer la
+            // colocación de los textos, que está medida contra 1.5 x 0.5.
+            root.transform.position = new Vector3(0f, 1.28f, 1.55f);
+            root.transform.rotation = Quaternion.Euler(14f, 0f, 0f);
+            root.transform.localScale = Vector3.one * 0.68f;
 
             MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.5f, 0.5f));
             var hud = root.AddComponent<HUD>();

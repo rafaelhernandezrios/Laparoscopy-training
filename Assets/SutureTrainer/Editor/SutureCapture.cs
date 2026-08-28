@@ -62,6 +62,8 @@ namespace SutureTrainer.EditorTools
             _csv = new StringBuilder();
             _csv.AppendLine(Header());
 
+            WriteSessionInfo();
+
             _frame = 0;
             _startTime = EditorApplication.timeSinceStartup;
             _nextSample = _startTime;
@@ -111,6 +113,38 @@ namespace SutureTrainer.EditorTools
 
         static string Header() =>
             "t,tension,pines,huecos_mm,hueco_medio_mm,hueco_max_mm";
+
+        /// <summary>
+        /// Deja constancia de QUÉ se estaba ejecutando, en un archivo aparte
+        /// para no ensuciar el CSV.
+        ///
+        /// Sin esto no se puede saber leyendo una grabación si corrió
+        /// AdvancedRopeThread o VerletThread: las dos dan telemetría muy
+        /// parecida y en la sesión del 28-08 hubo que adivinarlo. También
+        /// delata el caso en que las escenas no se han reconstruido tras tocar
+        /// SceneBuilder, que ya ha despistado dos veces.
+        /// </summary>
+        static void WriteSessionInfo()
+        {
+            var th = Object.FindFirstObjectByType<ThreadBase>();
+            var rope = Object.FindFirstObjectByType<VerletRopeGenerator>();
+            var escena = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"escena     : {escena.name}");
+            sb.AppendLine($"hilo       : {(th != null ? th.GetType().Name : "ninguno")}");
+            sb.AppendLine($"rope suelto: {(rope != null ? "si" : "no")}");
+            sb.AppendLine($"factoria   : {(TrainingLevel.ThreadFactory != null ? "registrada" : "por defecto")}");
+
+            // Cuándo se construyo la escena, para cazar el caso de estar
+            // probando una escena mas vieja que el codigo.
+            string ruta = escena.path;
+            if (!string.IsNullOrEmpty(ruta) && File.Exists(ruta))
+                sb.AppendLine($"escena del : {File.GetLastWriteTime(ruta):yyyy-MM-dd HH:mm:ss}");
+
+            File.WriteAllText(Path.Combine(_dir, "sesion.txt"), sb.ToString());
+            Debug.Log("[Captura] " + sb.ToString());
+        }
 
         /// <summary>
         /// Una fila del CSV. El dato clave es el hueco entre labios en cada

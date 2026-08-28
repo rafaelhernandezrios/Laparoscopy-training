@@ -38,7 +38,11 @@ namespace SutureTrainer
 
         [Tooltip("Informa en consola por qué no se registra la entrada: si " +
                  "falla la distancia o la inclinación de la punta.")]
-        public bool logEntryMisses = true;
+        // Apagado por defecto, como el debugLog de InstrumentHaptics: es una
+        // ayuda para afinar tolerancias, no algo que deba correr en una sesión
+        // normal. Encendido, cada intento fallido de entrada escribe en
+        // consola y da la impresión de que algo va mal.
+        public bool logEntryMisses = false;
         float _nextEntryLog;
 
         protected override string LevelTitle =>

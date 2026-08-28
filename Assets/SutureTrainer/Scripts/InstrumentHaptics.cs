@@ -86,10 +86,15 @@ namespace SutureTrainer
 
         [Header("Diagnóstico")]
         [Tooltip("Escribe en consola tejido/penetración/fuerza para poder regular.")]
-        // Encendido durante la calibración del Touch: sin ver |fTejido| y
-        // |enviado| no hay forma de saber si no se siente porque la fuerza es
-        // débil o porque no se está generando. Apágalo cuando ya esté ajustado.
-        public bool debugLog = true;
+        // Se enciende para calibrar el Touch: sin ver |fTejido| y |enviado| no
+        // hay forma de saber si no se siente porque la fuerza es débil o porque
+        // no se está generando.
+        //
+        // APAGADO por defecto. Se quedó encendido tras aquella calibración y
+        // escupe una línea cada 0.4 s desde que arranca la escena: la consola
+        // se llena sola y parece que el entrenador está fallando cuando no
+        // pasa nada. Enciéndelo en el inspector cuando toque volver a ajustar.
+        public bool debugLog = false;
         float _nextDbg;
         float _lastPen;   // penetración registrada (m)
 

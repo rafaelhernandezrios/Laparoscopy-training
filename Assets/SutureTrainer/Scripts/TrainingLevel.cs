@@ -98,11 +98,50 @@ namespace SutureTrainer
             go.transform.SetPositionAndRotation(worldPos, rot);
             var needle = go.AddComponent<SutureNeedle>();
             var grasp = go.GetComponent<Graspable>();
+            // isActiveAndEnabled: soltar la aguja después de terminar el nivel
+            // llegaría con el componente ya apagado, y StartCoroutine lanza
+            // excepción en ese caso.
             grasp.onReleased += () =>
             {
-                if (!Finished && Metrics.Running) Metrics.AddNeedleDrop();
+                if (isActiveAndEnabled) StartCoroutine(ConfirmarCaida(grasp, go.transform));
             };
             return needle;
+        }
+
+        [Tooltip("Margen tras soltar la aguja antes de contarlo como caída.")]
+        public float dropGraceSeconds = 1.5f;
+
+        [Tooltip("Cuánto tiene que descender la aguja tras soltarla para " +
+                 "considerarla caída, en metros.")]
+        public float dropFallMeters = 0.05f;
+
+        /// <summary>
+        /// Distingue SOLTAR de que se te CAIGA la aguja.
+        ///
+        /// Antes cada onReleased contaba un error, y recolocar la aguja en el
+        /// portaagujas —abrir, girar, volver a cerrar— es parte normal de
+        /// suturar, no un fallo. El contador subía sin parar desde el principio:
+        /// 11 errores en 24 s en la sesión del 28-08, ninguno por tensión (el
+        /// hilo solo cruzó el umbral una vez en toda la grabación).
+        ///
+        /// Ahora se espera un margen y solo cuenta si de verdad se quedó sin
+        /// agarrar Y cayó.
+        /// </summary>
+        System.Collections.IEnumerator ConfirmarCaida(Graspable grasp, Transform aguja)
+        {
+            if (grasp == null || aguja == null) yield break;
+
+            float alturaAlSoltar = aguja.position.y;
+            yield return new WaitForSeconds(dropGraceSeconds);
+
+            if (Finished || !Metrics.Running) yield break;
+            if (grasp == null || aguja == null) yield break;
+
+            // Recogida a tiempo: era una recolocación, no una caída.
+            if (grasp.IsHeld) yield break;
+
+            if (alturaAlSoltar - aguja.position.y >= dropFallMeters)
+                Metrics.AddNeedleDrop();
         }
 
         /// <summary>
