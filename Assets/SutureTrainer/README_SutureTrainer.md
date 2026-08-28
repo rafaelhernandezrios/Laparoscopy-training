@@ -9,6 +9,27 @@ Sistema de entrenamiento tipo consola da Vinci: los controladores del Quest act�
    Esto crea los materiales, las 6 escenas (`Assets/SutureTrainer/Scenes/`) y las añade a Build Settings.
 3. Abre `ST_00_Menu` y pulsa Play (con Quest Link) o compila para el visor.
 
+## Entorno de quirófano
+
+Las escenas se construyen dentro de un quirófano real
+(`Art/Environment/OperatingRoom.glb`, ~7 x 4 m con mesa de operaciones, lámpara
+cenital, torres y mobiliario) en lugar del disco de suelo y la consola
+procedurales de antes.
+
+- El `.glb` lo importa **glTFast** (`com.unity.cloud.gltfast`, ya en
+  `Packages/manifest.json`). La primera apertura del proyecto tarda: son 341
+  mallas y 85 materiales.
+- `Editor/OperatingRoomBuilder` **mueve la sala, nunca el campo**: detecta la
+  losa del suelo para dejarla en `y = 0` (el rig usa origen de suelo) y la mesa
+  de operaciones para centrarla bajo el campo quirúrgico. Las cotas calibradas
+  de los ejercicios no cambian.
+- La sala entra sin colisionadores y marcada como estática, para que el
+  batching no dispare las *draw calls* dentro del visor.
+- Para vestir una escena ya retocada a mano sin regenerarla:
+  **SutureTrainer → Añadir quirófano a la escena abierta**.
+- Si el `.glb` no está, todo cae al suelo y la consola procedurales de siempre,
+  igual que el resto del arte importado.
+
 ## Configuración para Quest 3 (una sola vez)
 
 1. **File → Build Profiles → Android** → Switch Platform.
@@ -46,6 +67,7 @@ Por nivel: tiempo, recorrido total de las puntas (economía de movimiento), erro
 - `TrainingLevel` + `Level1..5` — lógica de ejercicios.
 - `MetricsRecorder`, `HUD`, `ResultsPanel`, `ControllerLaser`, `WorldButton` — métricas y UI.
 - `Editor/SceneBuilder` — generación automática de materiales y escenas.
+- `Editor/OperatingRoomBuilder` — emplazamiento del quirófano importado alrededor del campo.
 
 ## Ajustes rápidos
 

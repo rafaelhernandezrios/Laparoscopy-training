@@ -105,3 +105,10 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Capturas de sesiones de sutura (SutureTrainer/Captura): PNG + CSV de depuracion.
+/[Cc]aptures/
+
+# Escena de recuperacion que Unity deja tras un cuelgue: no es fuente.
+/[Aa]ssets/_[Rr]ecovery/
+/[Aa]ssets/_[Rr]ecovery.meta

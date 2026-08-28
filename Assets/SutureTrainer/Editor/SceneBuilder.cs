@@ -20,7 +20,15 @@ namespace SutureTrainer.EditorTools
         const string MatDir = Root + "/Materials";
         const string SceneDir = Root + "/Scenes";
 
+        /// <summary>
+        /// Centro del campo quirúrgico. Es la cota de referencia de todos los
+        /// ejercicios, así que vive aquí y la usan tanto el campo como el
+        /// quirófano que se coloca a su alrededor.
+        /// </summary>
+        static readonly Vector3 FieldPos = new Vector3(0f, 1.08f, 0.55f);
+
         static Dictionary<string, Material> mats;
+        static ArtSet art;   // arte de la escena en construcción (puede ser null)
 
         [MenuItem("SutureTrainer/Construir todo (materiales + escenas)")]
         public static void BuildAll()
@@ -40,9 +48,111 @@ namespace SutureTrainer.EditorTools
                 list.Add(new EditorBuildSettingsScene($"{SceneDir}/{s}.unity", true));
             EditorBuildSettings.scenes = list.ToArray();
 
+            // La escena de órgano se construye aquí dentro, no aparte. Cuando
+            // vivía solo en su propio menú, cualquier "Construir todo" posterior
+            // reescribía la lista de Build Settings sin ella y el botón 6 del
+            // menú se quedaba apuntando a una escena que no estaba en la build.
+            BuildSutureScene();
+
             AssetDatabase.SaveAssets();
             EditorSceneManager.OpenScene($"{SceneDir}/{GameFlow.Scenes[0]}.unity");
             Debug.Log("[SutureTrainer] Escenas construidas y añadidas a Build Settings. ¡Listo!");
+        }
+
+        /// <summary>
+        /// Escena de réplica: el colgajo de hígado deformable de
+        /// SuturingSimulator, sus puntos de sutura y el hilo Verlet, pero
+        /// teleoperados desde el rig de este proyecto, así que funciona igual
+        /// con mando de Quest o con el 3D Systems Touch (F1 conmuta).
+        ///
+        /// Se construye aparte de los 5 niveles para poder validar la fidelidad
+        /// sin tocar el temario ya calibrado.
+        /// </summary>
+        [MenuItem("SutureTrainer/Construir escena de sutura con órgano real")]
+        public static void BuildSutureScene()
+        {
+            EnsureFolders();
+            CreateMaterials();
+
+            const string sceneName = GameFlow.OrganScene;
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.28f, 0.30f, 0.34f);
+
+            BuildLights();
+            float tableTopY = BuildEnvironment();
+            var camOffset = BuildXRRig();
+            var field = BuildSurgicalField(tableTopY);
+
+            var mgr = new GameObject("GameManager");
+            var matSet = mgr.AddComponent<MaterialSet>();
+            WireMaterialSet(matSet);
+
+            art = mgr.AddComponent<ArtSet>();
+            WireArtSet(art);
+            // aquí el tejido es el órgano deformable del rig, no un parche
+            art.tissue = null;
+
+            var masterR = mgr.AddComponent<MasterInput>();
+            masterR.node = XRNode.RightHand;
+            masterR.trackingSpace = camOffset;
+            masterR.toggleKey = UnityEngine.InputSystem.Key.F1;
+
+            var masterL = mgr.AddComponent<MasterInput>();
+            masterL.node = XRNode.LeftHand;
+            masterL.trackingSpace = camOffset;
+
+            // Ancla del Touch SOBRE el campo quirúrgico.
+            //
+            // Sin esto, touchHome queda vacío y el Touch se ancla donde
+            // estuviera el instrumento al pulsar F1: un punto arbitrario. El
+            // log lo delataba con penetraciones de -166 mm a +364 mm y la
+            // fuerza de trócar clavada en su máximo, porque la punta nunca
+            // estaba cerca del tejido.
+            var touchHome = new GameObject("TouchHome").transform;
+            touchHome.SetParent(field, false);
+            touchHome.localPosition = new Vector3(0f, 0.04f, 0f);
+            masterR.touchHome = touchHome;
+
+            // 2.5 amplificaba los ~16 cm del stylus a 40 cm de recorrido: para
+            // acertar una diana de 14 mm había que afinar a 5.6 mm de mano.
+            // La incisión mide ~80 mm, así que 1.2 (≈19 cm de recorrido) la
+            // cubre de sobra y deja el movimiento casi 1:1.
+            masterR.touchWorkspaceScale = 1.2f;
+
+            var laser = mgr.AddComponent<ControllerLaser>();
+            laser.master = masterR;
+            laser.startActive = false;
+
+            var armL = BuildArm(false, masterL, field);
+            var armR = BuildArm(true, masterR, field);
+
+            SutureRigBuilder.Build(field, armR);
+
+            // NO se añade el XR Device Simulator.
+            //
+            // Sirve para probar sin visor, pero crea dispositivos XR SIMULADOS
+            // que compiten con los reales: con Quest Link y el Touch conectados
+            // puede eclipsar el tracking auténtico. Como el uso previsto es
+            // hardware real (OPENHAPTICS_TOUCH solo está definido en Standalone),
+            // meterlo por defecto hace más daño que bien.
+            //
+            // Si alguna vez hace falta probar sin visor, arrástralo a mano desde
+            // Assets/Samples/XR Interaction Toolkit/3.4.1/XR Device Simulator/
+            // y quítalo antes de volver a probar en el visor.
+
+            EditorSceneManager.SaveScene(scene, $"{SceneDir}/{sceneName}.unity");
+
+            var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            string path = $"{SceneDir}/{sceneName}.unity";
+            if (!scenes.Exists(s => s.path == path))
+            {
+                scenes.Add(new EditorBuildSettingsScene(path, true));
+                EditorBuildSettings.scenes = scenes.ToArray();
+            }
+
+            Debug.Log($"[SutureTrainer] Escena de sutura creada: {path}");
         }
 
         // ------------------------------------------------------------------
@@ -112,14 +222,20 @@ namespace SutureTrainer.EditorTools
             RenderSettings.ambientLight = new Color(0.28f, 0.30f, 0.34f);
 
             BuildLights();
-            BuildEnvironment();
+            float tableTopY = BuildEnvironment();
             var camOffset = BuildXRRig();
-            var field = BuildSurgicalField();
+            var field = BuildSurgicalField(tableTopY);
 
             // gestor central
             var mgr = new GameObject("GameManager");
             var matSet = mgr.AddComponent<MaterialSet>();
             WireMaterialSet(matSet);
+
+            // Arte importado de SuturingSimulator. Es opcional: si la carpeta
+            // Art/ no está, cada prefab queda en null y todo cae a la geometría
+            // procedural de siempre.
+            art = mgr.AddComponent<ArtSet>();
+            WireArtSet(art);
 
             var masterR = mgr.AddComponent<MasterInput>();
             masterR.node = XRNode.RightHand; masterR.trackingSpace = camOffset;
@@ -129,6 +245,24 @@ namespace SutureTrainer.EditorTools
             masterR.toggleKey = UnityEngine.InputSystem.Key.F1;
             var masterL = mgr.AddComponent<MasterInput>();
             masterL.node = XRNode.LeftHand; masterL.trackingSpace = camOffset;
+
+            // Ancla del Touch SOBRE el campo quirúrgico.
+            //
+            // Sin esto, touchHome queda vacío y el Touch se ancla donde
+            // estuviera el instrumento al pulsar F1: un punto arbitrario. El
+            // log lo delataba con penetraciones de -166 mm a +364 mm y la
+            // fuerza de trócar clavada en su máximo, porque la punta nunca
+            // estaba cerca del tejido.
+            var touchHome = new GameObject("TouchHome").transform;
+            touchHome.SetParent(field, false);
+            touchHome.localPosition = new Vector3(0f, 0.04f, 0f);
+            masterR.touchHome = touchHome;
+
+            // 2.5 amplificaba los ~16 cm del stylus a 40 cm de recorrido: para
+            // acertar una diana de 14 mm había que afinar a 5.6 mm de mano.
+            // La incisión mide ~80 mm, así que 1.2 (≈19 cm de recorrido) la
+            // cubre de sobra y deja el movimiento casi 1:1.
+            masterR.touchWorkspaceScale = 1.2f;
 
             var laser = mgr.AddComponent<ControllerLaser>();
             laser.master = masterR;
@@ -158,6 +292,18 @@ namespace SutureTrainer.EditorTools
                 var hud = BuildHUD();
                 var results = BuildResultsPanel();
 
+                // Niveles de sutura (3, 4 y 5): montar el órgano portado para
+                // que sus dianas caigan sobre la incisión real. Los niveles
+                // detectan el OrganRig solos; si no está, siguen con el parche.
+                if (levelType == typeof(Level3_SimpleStitch) ||
+                    levelType == typeof(Level4_RunningSuture) ||
+                    levelType == typeof(Level5_KnotTying))
+                {
+                    // standalone:false -> sin hilo, sin aguja y sin captura
+                    // libre: el nivel ya aporta los suyos.
+                    SutureRigBuilder.Build(field, armR, standalone: false);
+                }
+
                 var level = (TrainingLevel)mgr.AddComponent(levelType);
                 level.leftArm = armL; level.rightArm = armR;
                 level.fieldRoot = field; level.hud = hud; level.results = results;
@@ -177,6 +323,75 @@ namespace SutureTrainer.EditorTools
                 case 4: level.parTimeSec = 300f; level.parPathMeters = 22f; level.maxErrors = 2; break;
                 case 5: level.parTimeSec = 360f; level.parPathMeters = 26f; level.maxErrors = 3; break;
             }
+        }
+
+        /// <summary>
+        /// Enlaza los prefabs de arte horneados desde SuturingSimulator. Cada
+        /// uno es opcional a propósito: el arte solo sustituye lo visual, nunca
+        /// los colisionadores ni las medidas calibradas de los ejercicios.
+        /// </summary>
+        static void WireArtSet(ArtSet s)
+        {
+            const string ArtDir = Root + "/Art";
+
+            GameObject Load(string name) =>
+                AssetDatabase.LoadAssetAtPath<GameObject>($"{ArtDir}/{name}.prefab");
+
+            s.needle = Load("SS_Needle");
+            s.instrumentLeft = Load("SS_Instrument_L");
+            s.instrumentRight = Load("SS_Instrument_R");
+            s.tissue = Load("SS_Liver");
+
+            // Escalas deducidas de la malla, no fijadas a mano: los modelos
+            // vienen en unidades de Blender/glTF (la pinza mide ~9 unidades) y
+            // cualquier factor inventado los deja gigantes o invisibles.
+            //
+            // Tamaños objetivo, en metros de la escena magnificada:
+            //  - instrumento 0.40 m  -> vástago del trócar a la muñeca + mandíbulas
+            //  - aguja       0.11 m  -> diámetro del arco procedural (arcRadius 0.055 * 2)
+            //  - tejido      0.55 m  -> TissuePatch.width
+            // ?? no sirve con objetos de Unity: no respeta su operador == sobrecargado
+            var fitRef = s.instrumentRight != null ? s.instrumentRight : s.instrumentLeft;
+            s.instrumentScale = ArtSet.ComputeFitScale(fitRef, 0.40f);
+            s.needleScale = ArtSet.ComputeFitScale(s.needle, 0.11f);
+            s.tissueScale = ArtSet.ComputeFitScale(s.tissue, 0.55f);
+
+            // Orientación de la pinza.
+            // Los hijos del prefab ya traen la rotación -90° en X de conversión
+            // Blender (Z-up) -> Unity (Y-up). Con ella, el eje largo del modelo
+            // (-Y en espacio de malla) queda apuntando a +Z en espacio del
+            // prefab: es decir, el vástago sale hacia DELANTE. Pero la muñeca
+            // del brazo apunta las mandíbulas a +Z (jawAnchor en z = +0.06) y
+            // espera el vástago hacia -Z, hacia el trócar.
+            // Girar 180° sobre Y invierte el eje y deja el modelo del derecho.
+            s.instrumentEuler = new Vector3(0f, 180f, 0f);
+
+            // Orientación de la aguja.
+            // El arco procedural (ProcMesh.ArcTube) vive en el plano XY, con
+            // normal Z. El modelo importado es delgado en X, o sea su arco está
+            // en el plano YZ con normal X. Girar 90° sobre Y lleva esa normal
+            // a Z y hace coincidir ambos planos.
+            s.needleEuler = new Vector3(0f, 90f, 0f);
+
+            // El origen del modelo NO está sobre el eje del vástago (el Body
+            // está centrado en x = -0.90), así que sin esto la pinza cuelga
+            // descentrada de la muñeca y se siente torcida al rotar.
+            s.instrumentOffset = ArtSet.ComputeShaftCenteringOffset(
+                fitRef, s.instrumentScale, s.instrumentEuler);
+
+            // El órgano se posa SOBRE el campo y se ve entero, como en
+            // SuturingSimulator. Su material es mat_higado_static, que pinta
+            // tex_higado_cortado: la incisión con su margen viene en la propia
+            // textura del modelo, no de los marcadores procedurales.
+            s.tissueOffset = ArtSet.ComputeSurfaceOffset(
+                s.tissue, s.tissueScale, s.tissueEuler, alignTop: false);
+
+            Debug.Log($"[SutureTrainer] Arte -> instrumento escala {s.instrumentScale:F4} " +
+                      $"offset {s.instrumentOffset}, aguja {s.needleScale:F4}, " +
+                      $"tejido {s.tissueScale:F4}");
+
+            if (s.needle == null && s.instrumentLeft == null && s.instrumentRight == null)
+                Debug.Log("[SutureTrainer] Sin carpeta Art/: se usa la geometría procedural.");
         }
 
         static void WireMaterialSet(MaterialSet s)
@@ -207,9 +422,22 @@ namespace SutureTrainer.EditorTools
             spot.range = 4f; spot.spotAngle = 70f; spot.intensity = 4f;
         }
 
-        static void BuildEnvironment()
+        /// <summary>
+        /// Entorno de la escena. Si el quirófano importado está disponible, es
+        /// él quien pone suelo y mobiliario; el disco y la consola procedurales
+        /// solo aparecen como respaldo, para que el proyecto siga arrancando
+        /// sin el modelo.
+        /// </summary>
+        /// <returns>
+        /// Altura del tablero de la mesa de operaciones, o NaN si se usó el
+        /// entorno procedural.
+        /// </returns>
+        static float BuildEnvironment()
         {
             var env = new GameObject("Environment");
+
+            var room = OperatingRoomBuilder.Build(env.transform, FieldPos);
+            if (room.built) return room.tableTopY;
 
             var floor = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             floor.name = "Floor";
@@ -225,6 +453,8 @@ namespace SutureTrainer.EditorTools
             desk.transform.position = new Vector3(0f, 0.5f, 0.55f);
             desk.transform.localScale = new Vector3(1.1f, 1.0f, 0.7f);
             desk.GetComponent<MeshRenderer>().sharedMaterial = mats["DarkMetal"];
+
+            return float.NaN;
         }
 
         static Transform BuildXRRig()
@@ -240,7 +470,11 @@ namespace SutureTrainer.EditorTools
             camGO.transform.SetParent(offset.transform, false);
             var cam = camGO.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.03f, 0.04f, 0.06f);
+            // Azul de hospital: se ve en techo y huecos que la geometría del
+            // quirófano no cubre, así que un negro casi puro (como antes)
+            // destacaba como un agujero. Este tono es el que asoma detrás de
+            // la sala, no una pared pintada.
+            cam.backgroundColor = new Color(0.55f, 0.66f, 0.74f);
             cam.nearClipPlane = 0.03f;
             camGO.AddComponent<AudioListener>();
 
@@ -258,16 +492,32 @@ namespace SutureTrainer.EditorTools
             return offset.transform;
         }
 
-        static Transform BuildSurgicalField()
+        /// <summary>
+        /// Campo quirúrgico. La base es una bandeja de 6 cm sobre el vacío
+        /// cuando el entorno es procedural; con el quirófano montado se estira
+        /// hasta el tablero de la mesa (<paramref name="tableTopY"/>) para que
+        /// no quede flotando por encima de él.
+        /// </summary>
+        static Transform BuildSurgicalField(float tableTopY)
         {
             var field = new GameObject("SurgicalField");
-            field.transform.position = new Vector3(0f, 1.08f, 0.55f);
+            field.transform.position = FieldPos;
+
+            // Cara superior de la bandeja, 5 mm por debajo del plano de trabajo.
+            const float topOffset = -0.005f;
+            float height = 0.06f;
+
+            if (!float.IsNaN(tableTopY))
+            {
+                float gap = FieldPos.y + topOffset - tableTopY;
+                if (gap > height) height = gap;
+            }
 
             var table = GameObject.CreatePrimitive(PrimitiveType.Cube);
             table.name = "FieldBase";
             table.transform.SetParent(field.transform, false);
-            table.transform.localPosition = new Vector3(0f, -0.035f, 0f);
-            table.transform.localScale = new Vector3(0.8f, 0.06f, 0.6f);
+            table.transform.localPosition = new Vector3(0f, topOffset - height * 0.5f, 0f);
+            table.transform.localScale = new Vector3(0.8f, height, 0.6f);
             table.GetComponent<MeshRenderer>().sharedMaterial = mats["Metal"];
 
             return field.transform;
@@ -336,6 +586,65 @@ namespace SutureTrainer.EditorTools
             arm.jawB = jawB;
             arm.jawAnchor = anchor;
             arm.workspaceCenter = field.position + Vector3.up * 0.15f;
+
+            // --- Arte: pinza importada de SuturingSimulator ---------------
+            // Sustituye SOLO lo visual. jawA/jawB siguen asignados en el brazo
+            // (RoboticArm los mueve igual), pero se ocultan sus cilindros: así
+            // la lógica de agarre, que usa jawAnchor, no cambia en nada.
+            var instrumentPrefab = art == null ? null
+                                 : (right ? art.instrumentRight : art.instrumentLeft);
+            if (instrumentPrefab != null)
+            {
+                var visual = ArtSet.AttachVisual(instrumentPrefab, wrist,
+                                                 art.instrumentScale, art.instrumentEuler,
+                                                 art.instrumentOffset);
+                if (visual != null)
+                {
+                    var iv = visual.gameObject.AddComponent<InstrumentVisual>();
+                    iv.arm = arm;
+
+                    // Llevar jawAnchor a las mandíbulas VISIBLES del modelo.
+                    //
+                    // jawAnchor es el punto desde el que mide toda la lógica
+                    // (RoboticArm.TipPos: agarre de la aguja y captura de
+                    // puntos de sutura). Estaba a 6 cm por delante de la
+                    // muñeca, que es donde acababan las mandíbulas
+                    // procedurales; pero las del modelo importado caen casi
+                    // sobre la muñeca. Resultado: 70 mm entre lo que se ve y
+                    // lo que se mide, así que tocar un punto era imposible por
+                    // mucho que se acercara.
+                    //
+                    // Se identifica la pieza móvil por su blendshape, igual que
+                    // hace InstrumentVisual.
+                    foreach (var smr in visual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    {
+                        if (smr.sharedMesh == null || smr.sharedMesh.blendShapeCount == 0) continue;
+
+                        // Centro de las mandíbulas visibles. Intenté afinar esto
+                        // buscando "la punta" proyectando sobre wrist.forward,
+                        // y salió PEOR (de 25-40 mm a 52-77 mm): el Clamp no se
+                        // extiende hacia adelante sino de lado, así que esa
+                        // proyección movía el ancla en perpendicular a las
+                        // mandíbulas. El centro queda dentro de la pieza visible,
+                        // que es lo que importa para el agarre.
+                        //
+                        // La captura de puntos de sutura YA NO usa este ancla:
+                        // mide contra la superficie visible (ver SutureRig).
+                        anchor.position = smr.bounds.center;
+                        break;
+                    }
+
+                    // Apagar las primitivas que el modelo reemplaza, salvo en
+                    // modo diagnóstico, donde se dejan para comparar posiciones.
+                    if (!art.showProceduralGuides)
+                    {
+                        wristVis.SetActive(false);
+                        foreach (var jaw in new[] { jawA, jawB })
+                            foreach (var mr in jaw.GetComponentsInChildren<MeshRenderer>(true))
+                                mr.enabled = false;
+                    }
+                }
+            }
 
             // Retroalimentación háptica de fuerza en el instrumento derecho
             // (activa de verdad cuando esa mano usa el Touch; en Quest vibra).
@@ -456,7 +765,9 @@ namespace SutureTrainer.EditorTools
             var root = new GameObject("Menu");
             root.transform.position = new Vector3(0f, 1.5f, 1.6f);
 
-            MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.6f, 1.25f));
+            // 1.35 de alto, no 1.25: el sexto botón baja hasta y = -0.475 y con
+            // el panel corto la ayuda del pie se le montaba encima.
+            MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.6f, 1.35f));
 
             MakeText(root.transform, "Title", "ENTRENADOR DE SUTURA ROBÓTICA", 1.1f,
                 new Vector3(0f, 0.5f, -0.005f), new Vector2(1.5f, 0.16f), new Color(0.65f, 0.85f, 1f));
@@ -475,9 +786,15 @@ namespace SutureTrainer.EditorTools
                 MakeButton(root.transform, labels[i],
                     new Vector3(0f, 0.22f - i * 0.13f, -0.01f), GameFlow.Scenes[i + 1]);
 
+            // Escena de órgano real. Cuelga del menú como sexto botón pero no
+            // entra en GameFlow.Scenes: no es un peldaño del temario, así que
+            // no debe aparecer como "siguiente nivel" al terminar el 5.
+            MakeButton(root.transform, "6 · Sutura en órgano real",
+                new Vector3(0f, 0.22f - 5 * 0.13f, -0.01f), GameFlow.OrganScene);
+
             MakeText(root.transform, "Help",
                 "Controles: gatillo = cerrar mandíbulas · mantener B/Y = salir al menú",
-                0.4f, new Vector3(0f, -0.53f, -0.005f), new Vector2(1.5f, 0.1f), new Color(0.6f, 0.6f, 0.65f));
+                0.4f, new Vector3(0f, -0.56f, -0.005f), new Vector2(1.5f, 0.1f), new Color(0.6f, 0.6f, 0.65f));
         }
     }
 }
