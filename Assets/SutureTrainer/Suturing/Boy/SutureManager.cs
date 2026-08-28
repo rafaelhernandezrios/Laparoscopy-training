@@ -57,7 +57,24 @@ public class SutureManager : MonoBehaviour
     [Button]
     public void SutureVertices(SuturePoint suturePoint)
     {
-        sutureVertices.Add(suturePoint.transform.position);
+        // Sin objetivo explícito se conserva el comportamiento original:
+        // clavar el punto donde ya está.
+        SutureVertices(suturePoint, suturePoint.transform.position);
+    }
+
+    /// <summary>
+    /// Sutura un punto tirando de él hacia <paramref name="target"/>.
+    ///
+    /// El original guardaba SIEMPRE suturePoint.transform.position, o sea que
+    /// suturar dejaba el labio clavado exactamente donde ya estaba y la herida
+    /// no se aproximaba nada: solo la movía después TightenSuture(), y en la
+    /// dirección de los puntos vecinos de la LISTA, no del labio de enfrente.
+    /// Quien decide el objetivo es OrganRig, que es el único que sabe qué
+    /// punto es pareja de cuál.
+    /// </summary>
+    public void SutureVertices(SuturePoint suturePoint, Vector3 target)
+    {
+        sutureVertices.Add(target);
 
         // ---- MODIFICADO RESPECTO A SuturingSimulator ----
         // SuturePoint.vertexIndex es un índice de la malla CRUDA (así lo usa el

@@ -50,6 +50,14 @@ namespace SutureTrainer
         [Tooltip("Hasta dónde llega la apertura a cada lado de la línea de corte.")]
         public float openingFalloff = 0.016f;
 
+        [Range(0f, 1f)]
+        [Tooltip("Cuánto se aproximan los labios en cada punto suturado.\n\n" +
+                 "0 = el punto se queda donde está (lo que hacía el original: " +
+                 "la herida no cerraba). 0.5 = los dos labios del par se " +
+                 "encuentran en el centro. 1 = cada labio va hasta el opuesto, " +
+                 "que se pasa de frenada y los cruza.")]
+        public float approximation = 0.5f;
+
         bool _abierta;
 
         void Awake() { I = this; }
@@ -149,9 +157,38 @@ namespace SutureTrainer
             // El hilo Verlet de AdvancedRope solo existe en el banco de pruebas;
             // dentro de un nivel el hilo visible es el del propio nivel.
             if (ropePinHole != null) ropePinHole.PinNode(sp);
-            if (sutureManager != null) sutureManager.SutureVertices(sp);
+            if (sutureManager != null) sutureManager.SutureVertices(sp, TargetFor(sp));
             Tint(sp);
             return true;
+        }
+
+        /// <summary>
+        /// A dónde tira un punto al suturarlo: hacia su pareja del labio de
+        /// enfrente, que es lo que hace un punto de sutura de verdad.
+        ///
+        /// SuturingSimulator fijaba el objetivo en la posición ACTUAL del punto,
+        /// así que suturar lo clavaba donde ya estaba y la herida no se cerraba
+        /// nunca; la única aproximación venía de TightenSuture(), que empuja
+        /// cada objetivo hacia sus vecinos EN LA LISTA. Si no se suturaba
+        /// alternando labios, eso arrastraba a lo largo de la incisión en vez
+        /// de cruzarla, y el hueco se quedaba igual o se abría más.
+        ///
+        /// No se pone el objetivo en el labio contrario sino a medio camino:
+        /// los dos puntos del par tiran del mismo sitio y se encuentran en el
+        /// centro, sin que ninguno cruce al otro lado.
+        /// </summary>
+        Vector3 TargetFor(SuturePoint sp)
+        {
+            foreach (var p in pairs)
+            {
+                if (p.entry == sp && p.exit != null)
+                    return Vector3.Lerp(sp.transform.position,
+                                        p.exit.transform.position, approximation);
+                if (p.exit == sp && p.entry != null)
+                    return Vector3.Lerp(sp.transform.position,
+                                        p.entry.transform.position, approximation);
+            }
+            return sp.transform.position;
         }
 
         /// <summary>

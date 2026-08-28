@@ -694,7 +694,20 @@ namespace SutureTrainer.EditorTools
         static HUD BuildHUD()
         {
             var root = new GameObject("HUD");
-            root.transform.position = new Vector3(0f, 1.62f, 1.25f);
+
+            // Colocado para la mirada de trabajo, no para la de reposo.
+            //
+            // A 1.62 m de alto quedaba a la altura de los ojos de quien mira al
+            // FRENTE, pero suturar obliga a mirar abajo, al campo (1.08 m, a
+            // 0.55 m): en la grabación del 28-08 solo asomaba el borde inferior
+            // del panel, recortado por arriba, así que la guía de fases —que es
+            // la que explica la mecánica del punto— no se leía nunca.
+            //
+            // Ahora se pone más bajo y algo más lejos, justo pasada la herida, e
+            // inclinado hacia arriba para que mire a los ojos: cae dentro del
+            // mismo vistazo que el campo.
+            root.transform.position = new Vector3(0f, 1.32f, 1.0f);
+            root.transform.rotation = Quaternion.Euler(22f, 0f, 0f);
 
             MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.5f, 0.5f));
             var hud = root.AddComponent<HUD>();

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using AdvancedRope;
 using UnityEditor;
 using UnityEngine;
 
@@ -124,6 +125,29 @@ namespace SutureTrainer.EditorTools
 
             float tension = thread != null ? thread.Tension : float.NaN;
             bool pins = thread != null && thread.HasPins;
+
+            // ST_06 no usa ThreadBase sino el rope de AdvancedRope, así que
+            // mirando solo ThreadBase la tensión salía NaN en toda la sesión.
+            // Aquí se mide igual que VerletThread: longitud recorrida entre
+            // extremos frente a la longitud en reposo.
+            if (thread == null)
+            {
+                var rope = Object.FindFirstObjectByType<VerletRopeGenerator>();
+                if (rope != null && rope.Nodes != null && rope.Nodes.Count > 1)
+                {
+                    var nodes = rope.Nodes;
+                    float recorrida = 0f;
+                    int anclados = 0;
+                    for (int i = 1; i < nodes.Count; i++)
+                        recorrida += Vector3.Distance(nodes[i - 1].position, nodes[i].position);
+                    foreach (var n in nodes) if (n.isPinned) anclados++;
+
+                    float directa = Vector3.Distance(nodes[0].position,
+                                                     nodes[nodes.Count - 1].position);
+                    tension = recorrida > 1e-4f ? directa / recorrida : 0f;
+                    pins = anclados > 0;
+                }
+            }
 
             var gaps = new List<float>();
             if (organ != null)

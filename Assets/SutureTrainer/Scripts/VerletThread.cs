@@ -24,10 +24,16 @@ namespace SutureTrainer
         public Material normalMat;
         public Material tenseMat;
         // Ancho del hilo (diámetro del LineRenderer), en metros del campo
-        // magnificado. 6 mm resultaba un cabo muy grueso; se calibra igual que
-        // el hilo del rig de sutura: sutura 4-0 (0.20 mm real) vista al aumento
-        // 5x del campo = 1.0 mm.
-        public float lineWidth = 0.001f;
+        // magnificado.
+        //
+        // Estuvo en 1.0 mm por calibre anatómico (sutura 4-0, 0.20 mm real,
+        // vista al aumento 5x del campo). Es fiel y es inservible: a la
+        // distancia de trabajo del visor eso es un pelo de uno o dos píxeles,
+        // y el hilo parecía no existir aunque la mecánica del punto estuviera
+        // funcionando. Los 6 mm de antes sí eran un cabo muy gordo, así que se
+        // deja en 4 mm, el mismo diámetro que el hilo del rig de sutura para
+        // que los dos se vean igual.
+        public float lineWidth = 0.004f;
 
         public override float Tension => _tension;
         float _tension;

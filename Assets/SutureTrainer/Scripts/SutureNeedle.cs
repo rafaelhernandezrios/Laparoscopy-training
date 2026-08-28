@@ -34,8 +34,7 @@ namespace SutureTrainer
             mf.sharedMesh = mesh;
             var mr = gameObject.GetComponent<MeshRenderer>();
             if (mr == null) mr = gameObject.AddComponent<MeshRenderer>();
-            if (material != null) mr.sharedMaterial = material;
-            else if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.needle;
+            AssignMaterial(mr);
 
             // Arte importado: se cuelga el modelo real y se apaga el arco
             // procedural, pero la malla, el collider y los transforms Tip/Tail
@@ -75,6 +74,27 @@ namespace SutureTrainer
             rb.mass = 0.02f;
             rb.isKinematic = true; // se activa la gravedad al soltar (Graspable)
             rb.interpolation = RigidbodyInterpolation.None; // evita retraso visual al ir agarrada
+        }
+
+        /// <summary>
+        /// Segundo intento de material, ya con todos los Awake ejecutados.
+        ///
+        /// MaterialSet publica su instancia en Awake, y Unity NO garantiza el
+        /// orden de Awake entre objetos distintos: si la aguja despertaba
+        /// primero, MaterialSet.I era null, el renderer se quedaba sin material
+        /// y la aguja salía MAGENTA en la escena. Start siempre corre después
+        /// de todos los Awake, así que aquí ya está disponible.
+        /// </summary>
+        void Start()
+        {
+            var mr = GetComponent<MeshRenderer>();
+            if (mr != null && mr.sharedMaterial == null) AssignMaterial(mr);
+        }
+
+        void AssignMaterial(MeshRenderer mr)
+        {
+            if (material != null) mr.sharedMaterial = material;
+            else if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.needle;
         }
     }
 }

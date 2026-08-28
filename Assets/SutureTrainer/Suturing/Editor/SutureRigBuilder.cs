@@ -41,22 +41,29 @@ namespace SutureTrainer.EditorTools
         /// <summary>
         /// Radio del hilo, en metros del campo magnificado.
         ///
-        /// Copiar el valor original escalado (0.00125 * FieldScale = 1.98 mm)
-        /// reproduce su PROPORCIÓN, pero resulta un hilo visiblemente gordo:
-        /// equivale a un cabo de 4 mm de diámetro. Aquí se parte del calibre
-        /// real en su lugar. Con el campo magnificado 5x (ver README):
-        ///   sutura 3-0 (0.30 mm) -> radio 0.750 mm
-        ///   sutura 4-0 (0.20 mm) -> radio 0.500 mm   <-- por defecto
-        ///   sutura 5-0 (0.15 mm) -> radio 0.375 mm
+        /// El calibre anatómico se probó y NO sirve. Partiendo de la sutura
+        /// real magnificada 5x (4-0 = 0.20 mm -> radio 0.500 mm) sale un tubo
+        /// de 1 mm de diámetro que a la distancia de trabajo del visor ocupa
+        /// uno o dos píxeles: en la grabación del 28-08 el hilo estaba ahí y
+        /// simulando (51 nodos, tensión 0.99) y aun así era invisible.
+        ///
+        /// Así que se vuelve al valor del original escalado
+        /// (0.00125 * FieldScale = 1.98 mm de radio, ~4 mm de diámetro). Es un
+        /// cabo gordo para lo que representa, pero un entrenador tiene que
+        /// dejar VER lo que hace el hilo; el calibre exacto no se está
+        /// evaluando. Bajar de ~1.5 mm de radio lo hace desaparecer otra vez.
         /// </summary>
-        const float RopeRadius = 0.0005f;
+        const float RopeRadius = 0.00198f;
 
         /// <summary>
-        /// Largo del cabo, en metros del campo. El original era el 28.5% del
-        /// ancho del colgajo (0.157 m aquí), que se percibe largo; se acorta
-        /// dejando cabo suficiente para dar los puntos.
+        /// Largo del cabo, en metros del campo.
+        ///
+        /// Los 0.10 m de antes dan para uno o dos puntos y se acaban: con la
+        /// herida entera por coser hace falta cabo. El hilo propio del
+        /// proyecto (VerletThread.totalLength) usa 1.1 m; aquí 0.30 m cubre la
+        /// incisión con margen sin llenar el campo de hilo suelto.
         /// </summary>
-        const float RopeLength = 0.10f;
+        const float RopeLength = 0.30f;
         const float RopeStiffness = 0.2f;
         const int RopeIterations = 32;
         const float RopeContactFriction = 1f;
@@ -533,7 +540,41 @@ namespace SutureTrainer.EditorTools
             }
         }
 
-        static Material LoadMat(string name) =>
-            AssetDatabase.LoadAssetAtPath<Material>($"{ArtDir}/{name}.mat");
+        /// <summary>
+        /// Carga un material del arte portado.
+        ///
+        /// Busca fuera de ArtDir si hace falta porque el arte llegó repartido:
+        /// mat_higado_static acabó en Art/Materials/ y el resto en
+        /// Suturing/Art/. Con la ruta fija, matStatic salía null y el renderer
+        /// del hígado se quedaba con un hueco en sharedMaterials, que Unity
+        /// pinta de MAGENTA. En pantalla parecía un shader roto, pero el
+        /// shader estaba bien: no había material.
+        ///
+        /// Un material que no aparece es un error de verdad, así que se avisa
+        /// en vez de devolver null en silencio y dejar que se vea en el visor.
+        /// </summary>
+        static Material LoadMat(string name)
+        {
+            var mat = AssetDatabase.LoadAssetAtPath<Material>($"{ArtDir}/{name}.mat");
+            if (mat != null) return mat;
+
+            foreach (var guid in AssetDatabase.FindAssets($"{name} t:Material"))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (System.IO.Path.GetFileNameWithoutExtension(path) != name) continue;
+
+                mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (mat != null)
+                {
+                    Debug.LogWarning($"[SutureRig] {name}.mat no está en {ArtDir} " +
+                                     $"sino en {path}. Se usa igualmente.");
+                    return mat;
+                }
+            }
+
+            Debug.LogError($"[SutureRig] Falta {name}.mat: lo que lo use saldrá " +
+                           "de color magenta en la escena.");
+            return null;
+        }
     }
 }
