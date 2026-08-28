@@ -750,7 +750,12 @@ namespace SutureTrainer.EditorTools
             root.transform.rotation = Quaternion.Euler(14f, 0f, 0f);
             root.transform.localScale = Vector3.one * 0.68f;
 
-            MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.5f, 0.5f));
+            // 0.66 de alto, no 0.50: el aviso del pie caía en y = -0.26 con un
+            // panel que acababa en -0.25, o sea FUERA. Sin fondo detrás y con
+            // un rectángulo de solo 0.10 para textos largos, el mensaje se
+            // desbordaba y cruzaba la pantalla en diagonal, como se ve en el
+            // vídeo del 28-08.
+            MakePanelQuad(root.transform, Vector3.zero, new Vector2(1.5f, 0.66f));
             var hud = root.AddComponent<HUD>();
             hud.titleText = MakeText(root.transform, "Title", "", 0.8f,
                 new Vector3(0f, 0.17f, -0.005f), new Vector2(1.4f, 0.12f), new Color(0.65f, 0.85f, 1f));
@@ -758,8 +763,11 @@ namespace SutureTrainer.EditorTools
                 new Vector3(0f, 0.02f, -0.005f), new Vector2(1.4f, 0.18f), Color.white);
             hud.timerText = MakeText(root.transform, "Timer", "00:00", 0.5f,
                 new Vector3(0f, -0.15f, -0.005f), new Vector2(1.4f, 0.08f), new Color(0.8f, 0.8f, 0.8f));
+            // Rectángulo más alto para que los avisos largos ("Entrada correcta ·
+            // gira la muñeca siguiendo la curva de la aguja") quepan en dos
+            // líneas en vez de desbordar a lo ancho.
             hud.flashText = MakeText(root.transform, "Flash", "", 0.6f,
-                new Vector3(0f, -0.26f, -0.005f), new Vector2(1.4f, 0.1f), Color.green);
+                new Vector3(0f, -0.24f, -0.005f), new Vector2(1.4f, 0.14f), Color.green);
             return hud;
         }
 

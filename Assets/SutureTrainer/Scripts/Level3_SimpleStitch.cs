@@ -258,6 +258,25 @@ namespace SutureTrainer
             }
         }
 
+        /// <summary>
+        /// Trabajar sobre las dianas del punto en curso no es punción indebida:
+        /// es exactamente la maniobra que se está pidiendo. Se da un margen de
+        /// tres radios, el mismo con el que DiagnosticarDiana considera que la
+        /// punta "está cerca".
+        /// </summary>
+        protected override bool PuncionEsperada(Vector3 tip)
+        {
+            if (entries == null || exits == null) return false;
+            if (currentPair < 0 || currentPair >= entries.Length) return false;
+
+            return CercaDeDiana(entries[currentPair], tip) ||
+                   CercaDeDiana(exits[currentPair], tip);
+        }
+
+        static bool CercaDeDiana(PunctureTarget diana, Vector3 tip) =>
+            diana != null &&
+            Vector3.Distance(tip, diana.transform.position) < diana.EffectiveRadius * 3f;
+
         protected virtual void OnStitchThreadPulled()
         {
             if (cinchAfterEachStitch)

@@ -187,10 +187,26 @@ namespace SutureTrainer
             var t = go.AddComponent<TissuePatch>();
             t.onBadPuncture += p =>
             {
-                if (!Finished) FlashError("Punción fuera de la diana");
+                if (!Finished && !PuncionEsperada(p)) FlashError("Punción fuera de la diana");
             };
             return t;
         }
+
+        /// <summary>
+        /// ¿La punta está donde SE ESPERA que esté, aunque el parche lógico la
+        /// considere una punción indebida?
+        ///
+        /// TissuePatch marca error en cuanto la punta baja de su plano sin que
+        /// el nivel haya abierto punctureAllowed, y ese permiso solo está
+        /// abierto entre la entrada y la salida del punto. Pero con el órgano
+        /// real el plano lógico se alinea con la herida, que es una zanja: para
+        /// apuntar a la diana de entrada hay que estar ahí abajo. Resultado, un
+        /// error cada 1.5 s -el limitador de TissuePatch- solo por colocarse.
+        /// En la sesión del 28-08 eran 5 errores en 8 segundos, todos falsos.
+        ///
+        /// Cada nivel decide qué zona es legítima; por defecto, ninguna.
+        /// </summary>
+        protected virtual bool PuncionEsperada(Vector3 tip) => false;
 
         protected PunctureTarget SpawnPunctureTarget(Vector3 worldPos, bool isEntry, int pairIndex)
         {
