@@ -67,7 +67,11 @@ namespace SutureTrainer
             tissue = SpawnTissue();
             organ = OrganRig.I;
 
-            var tray = SpawnTray(fieldRoot.position + new Vector3(0.20f, 0.03f, -0.12f));
+            // Bandeja a 11 cm, no a 20. Con la aguja tan apartada, el recorrido
+            // que el Touch tenia que cubrir -de la aguja a la diana mas lejana-
+            // era de 275 mm; acercandola baja a 185 mm y se embraga bastante
+            // menos. No estorba: las dianas no pasan de x = +75 mm.
+            var tray = SpawnTray(fieldRoot.position + new Vector3(0.11f, 0.03f, -0.10f));
             needle = SpawnNeedle(tray.transform.position + Vector3.up * 0.02f,
                 Quaternion.Euler(90f, 0f, 0f));
             thread = SpawnThread(needle);

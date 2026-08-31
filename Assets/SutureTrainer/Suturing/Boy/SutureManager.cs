@@ -32,8 +32,12 @@ public class SutureManager : MonoBehaviour
         // que esa llamada lanzaba InvalidOperationException CADA FRAME y abortaba
         // Update() entero: el tejido no reaccionaba a nada.
         // El atajo de teclado se conserva, pero leído por el Input System.
-        // La vía normal de tensado es SutureRig -> MasterInput.Secondary, que
-        // funciona igual con mando de Quest o con el Touch.
+        //
+        // Y con el Touch es la ÚNICA vía. SutureRig tensa con
+        // MasterInput.Secondary, que en modo Touch está siempre en false:
+        // ApplyWorldPose lo fija así porque el stylus solo tiene dos botones y
+        // los dos están cogidos (delantero = mandíbulas, trasero = embrague).
+        // Con el mando de Quest sigue valiendo B/Y.
         var keyboard = UnityEngine.InputSystem.Keyboard.current;
         if (keyboard != null && keyboard.spaceKey.wasPressedThisFrame)
             TightenSuture();
