@@ -244,6 +244,32 @@ namespace SutureTrainer
 #endif
         }
 
+        /// <summary>
+        /// Aviso breve (acierto, error, tope) por el canal de VIBRACIÓN.
+        ///
+        /// Va por un efecto distinto al de la fuerza constante a propósito.
+        /// Antes los avisos se mandaban con SetForceWorld, o sea escribiendo en
+        /// el MISMO efecto que usa el lazo de contacto: un aviso de error metía
+        /// 2.25 N por el eje del stylus y pisaba la fuerza del tejido hasta que
+        /// el siguiente FixedUpdate la reescribía. Eso es el tirón que se
+        /// notaba en cada error.
+        ///
+        /// La vibración es lo que el aparato ofrece para notificar: no compite
+        /// con la fuerza sostenida y se apaga sola al cumplirse el tiempo.
+        /// </summary>
+        public static void Pulse(Vector3 dir, float magnitude, float freqHz, float seconds)
+        {
+#if OPENHAPTICS_TOUCH
+            if (!_inited) return;
+            if (dir.sqrMagnitude < 1e-8f) dir = Vector3.forward;
+            dir.Normalize();
+
+            _vibDir[0] = dir.x; _vibDir[1] = dir.y; _vibDir[2] = dir.z;
+            try { setVibrationValues(DeviceName, _vibDir, magnitude, freqHz, seconds); }
+            catch (System.EntryPointNotFoundException) { }
+#endif
+        }
+
         /// <summary>Último error del driver, o cadena vacía.</summary>
         public static string ReadError()
         {
@@ -276,6 +302,7 @@ namespace SutureTrainer
         static readonly double[] _mat = new double[16];
         static readonly double[] _force = new double[3];
         static readonly double[] _forceRead = new double[3];
+        static readonly double[] _vibDir = new double[3];
         static readonly double[] _torqueZero = new double[3];
         static readonly int[] _btn = new int[8];
         static readonly int[] _btnChg = new int[8];
@@ -355,6 +382,7 @@ namespace SutureTrainer
         // La vía BUENA de renderizar fuerza. Firmas tomadas del paquete oficial
         // HapticsDirect (HapticPlugin.cs), no deducidas.
         [DllImport(DLL)] static extern void setConstantForceValues(string deviceName, double[] direction, double magnitude);
+        [DllImport(DLL)] static extern void setVibrationValues(string deviceName, double[] direction, double magnitude, double frequency, double time);
         [DllImport(DLL)] static extern int getHDError(System.Text.StringBuilder info, int len);
         [DllImport(DLL)] static extern void disconnectAllDevices();
 #endif

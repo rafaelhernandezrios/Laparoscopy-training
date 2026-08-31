@@ -49,6 +49,14 @@ namespace SutureTrainer
         [Tooltip("Fuerza (N) que produce vibración máxima como fallback en el mando Quest.")]
         public float questForceForFullRumble = 3.0f;
 
+        [Tooltip("Amplitud máxima del aviso vibratorio del Touch, en newtons. " +
+                 "Es un aviso, no una fuerza de contacto: debe notarse sin " +
+                 "mover la mano.")]
+        public float pulseForce = 0.35f;
+
+        [Tooltip("Frecuencia del aviso vibratorio del Touch, en Hz.")]
+        public float pulseFrequency = 120f;
+
         public Backend ActiveBackend => backend;
 
         public bool IsTracked { get; private set; }
@@ -388,8 +396,21 @@ namespace SutureTrainer
 
             if (backend == Backend.TouchHaptic)
             {
-                // pulso breve de fuerza a lo largo del eje del stylus
-                TouchDevice.SetForceWorld(WorldRot * (Vector3.forward * amplitude * 2.5f));
+                // Vibración, NO fuerza.
+                //
+                // Antes esto llamaba a SetForceWorld, o sea escribía en el mismo
+                // efecto de fuerza constante que usa el lazo de contacto: un
+                // aviso de error (amplitud 0.9) metía 2.25 N por el eje del
+                // stylus y pisaba la fuerza del tejido hasta el siguiente
+                // FixedUpdate. Se sentía como un tirón del robot en cada aviso.
+                //
+                // La vibración es un efecto aparte: notifica sin competir con la
+                // fuerza sostenida, y se apaga sola al cumplirse el tiempo, así
+                // que además `duration` por fin significa algo aquí.
+                TouchDevice.Pulse(WorldRot * Vector3.forward,
+                                  amplitude * pulseForce,
+                                  pulseFrequency,
+                                  Mathf.Max(0.01f, duration));
                 return;
             }
             if (_legacyDevice.isValid)
