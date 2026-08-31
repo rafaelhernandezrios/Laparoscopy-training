@@ -58,8 +58,13 @@ namespace SutureTrainer
         /// Se corrige por descomposición swing-twist en vez de con más ángulos
         /// de Euler: así se toca SOLO el giro sobre el eje y no se mueve nada
         /// de la orientación que ya está bien.
+        ///
+        /// APAGADO tras probarlo: dejó la orientación peor, lo que estaba bien
+        /// pasó a estar del revés. O el eje no es el que se supone, o el
+        /// residuo no era un giro propio. Se queda implementado para medirlo
+        /// eje por eje en vez de seguir tanteando.
         /// </summary>
-        public static bool InvertRoll = true;
+        public static bool InvertRoll = false;
 
         /// <summary>Eje del stylus sobre el que se mide el giro a invertir.</summary>
         public static Vector3 RollAxis = Vector3.forward;
@@ -168,6 +173,29 @@ namespace SutureTrainer
         }
 
         /// <summary>Envía una fuerza (espacio de MUNDO, newtons) al stylus.</summary>
+        /// <summary>Última fuerza que se PIDIÓ al aparato, en newtons de dispositivo.</summary>
+        public static Vector3 LastRequested { get; private set; }
+
+        /// <summary>
+        /// Fuerza que el aparato dice estar renderizando AHORA. Comparada con
+        /// <see cref="LastRequested"/> distingue los dos fallos que se parecen:
+        /// que no estemos mandando nada, o que mandemos y no salga.
+        /// </summary>
+        public static Vector3 ReadCurrentForce()
+        {
+#if OPENHAPTICS_TOUCH
+            if (!_inited) return Vector3.zero;
+            try
+            {
+                getCurrentForce(DeviceName, _forceRead);
+                return new Vector3((float)_forceRead[0], (float)_forceRead[1], (float)_forceRead[2]);
+            }
+            catch (System.EntryPointNotFoundException) { return Vector3.zero; }
+#else
+            return Vector3.zero;
+#endif
+        }
+
         public static void SetForceWorld(Vector3 worldForce)
         {
             if (!_inited) return;
@@ -176,6 +204,7 @@ namespace SutureTrainer
             _force[0] = devForce.x * AxisSign.x * ForceScale;
             _force[1] = devForce.y * AxisSign.y * ForceScale;
             _force[2] = devForce.z * AxisSign.z * ForceScale;
+            LastRequested = new Vector3((float)_force[0], (float)_force[1], (float)_force[2]);
             setForce(DeviceName, _force, _torqueZero);
 #endif
         }
@@ -194,6 +223,7 @@ namespace SutureTrainer
         static readonly double[] _pos = new double[3];
         static readonly double[] _mat = new double[16];
         static readonly double[] _force = new double[3];
+        static readonly double[] _forceRead = new double[3];
         static readonly double[] _torqueZero = new double[3];
         static readonly int[] _btn = new int[8];
         static readonly int[] _btnChg = new int[8];
@@ -265,6 +295,10 @@ namespace SutureTrainer
         [DllImport(DLL)] static extern void getTransform(string deviceName, double[] transform);
         [DllImport(DLL)] static extern void getButtons(string deviceName, int[] buttons, int[] buttonsChanged, ref int numButtons);
         [DllImport(DLL)] static extern void setForce(string deviceName, double[] force, double[] torque);
+        // Misma forma que getPosition. La usa el propio HapticDemo de 3D Systems,
+        // y es la única manera de distinguir "no mando fuerza" de "la mando y el
+        // aparato no la renderiza".
+        [DllImport(DLL)] static extern void getCurrentForce(string deviceName, double[] force);
         [DllImport(DLL)] static extern void disconnectAllDevices();
 #endif
     }
