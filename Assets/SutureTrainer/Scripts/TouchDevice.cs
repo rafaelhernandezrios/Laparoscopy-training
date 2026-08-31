@@ -196,16 +196,68 @@ namespace SutureTrainer
 #endif
         }
 
+        /// <summary>
+        /// Renderizar por el efecto de fuerza constante en vez de por setForce.
+        ///
+        /// El paquete oficial HapticsDirect declara setForce y NO lo llama
+        /// nunca: toda su salida de fuerza va por efectos. Su propia
+        /// documentación lo dice — "Adds an additional force... but in most
+        /// cases using an Effect is preferable". Y midiendo con getCurrentForce
+        /// se vio por qué: pidiendo 0.45 N por setForce, el aparato renderizaba
+        /// 0.000 N. El bucle de servo del wrapper reescribe la fuerza en cada
+        /// tick a partir de SU estado de efectos, así que lo que se escribe
+        /// desde el hilo principal se pierde.
+        ///
+        /// Se deja el camino viejo detrás de un interruptor para poder
+        /// comparar los dos con getCurrentForce.
+        /// </summary>
+        public static bool UseConstantForceEffect = true;
+
         public static void SetForceWorld(Vector3 worldForce)
         {
             if (!_inited) return;
 #if OPENHAPTICS_TOUCH
             Vector3 devForce = Quaternion.Inverse(AnchorRot) * worldForce;
+
+            if (UseConstantForceEffect)
+            {
+                // Sin AxisSign: getPosition y getTransform están documentados
+                // como "(Unity CSys)" y el plugin oficial pasa los Vector3 tal
+                // cual, sin tocar ejes (Vector3ToDoubleArray solo copia).
+                float mag = devForce.magnitude * ForceScale;
+                Vector3 dir = mag > 1e-5f ? devForce.normalized : Vector3.zero;
+
+                _force[0] = dir.x; _force[1] = dir.y; _force[2] = dir.z;
+                LastRequested = dir * mag;
+
+                // Magnitud 0 apaga el efecto: es como lo desactiva el propio
+                // plugin (DisableContantForce), no hay llamada aparte.
+                setConstantForceValues(DeviceName, _force, mag);
+                return;
+            }
+
             _force[0] = devForce.x * AxisSign.x * ForceScale;
             _force[1] = devForce.y * AxisSign.y * ForceScale;
             _force[2] = devForce.z * AxisSign.z * ForceScale;
             LastRequested = new Vector3((float)_force[0], (float)_force[1], (float)_force[2]);
             setForce(DeviceName, _force, _torqueZero);
+#endif
+        }
+
+        /// <summary>Último error del driver, o cadena vacía.</summary>
+        public static string ReadError()
+        {
+#if OPENHAPTICS_TOUCH
+            if (!_inited) return "";
+            try
+            {
+                var sb = new System.Text.StringBuilder(256);
+                int r = getHDError(sb, sb.Capacity);
+                return r == 0 ? "" : $"({r}) {sb}";
+            }
+            catch (System.EntryPointNotFoundException) { return ""; }
+#else
+            return "";
 #endif
         }
 
@@ -299,6 +351,11 @@ namespace SutureTrainer
         // y es la única manera de distinguir "no mando fuerza" de "la mando y el
         // aparato no la renderiza".
         [DllImport(DLL)] static extern void getCurrentForce(string deviceName, double[] force);
+
+        // La vía BUENA de renderizar fuerza. Firmas tomadas del paquete oficial
+        // HapticsDirect (HapticPlugin.cs), no deducidas.
+        [DllImport(DLL)] static extern void setConstantForceValues(string deviceName, double[] direction, double magnitude);
+        [DllImport(DLL)] static extern int getHDError(System.Text.StringBuilder info, int len);
         [DllImport(DLL)] static extern void disconnectAllDevices();
 #endif
     }

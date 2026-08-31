@@ -76,6 +76,11 @@ namespace SutureTrainer.EditorTools
                 sb.AppendLine($"  fuerza pedida : {pedida.magnitude:F3} N  {pedida}");
                 sb.AppendLine($"  fuerza real   : {real.magnitude:F3} N  {real}");
 
+                sb.AppendLine($"  via           : {(TouchDevice.UseConstantForceEffect ? "efecto de fuerza constante" : "setForce crudo")}");
+
+                string err = TouchDevice.ReadError();
+                if (!string.IsNullOrEmpty(err)) sb.AppendLine($"  error driver  : {err}");
+
                 if (pedida.magnitude > 0.05f && real.magnitude < 0.01f)
                     sb.AppendLine("  >> Se PIDE fuerza y el aparato renderiza CERO: " +
                                   "el fallo está por debajo de Unity.");
