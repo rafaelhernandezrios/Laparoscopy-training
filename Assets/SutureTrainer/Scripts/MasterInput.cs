@@ -31,6 +31,11 @@ namespace SutureTrainer
         [Range(0.05f, 1f)] public float smoothing = 0.35f;
 
         [Header("Calibración Touch (dispositivo -> mundo)")]
+        [Tooltip("Al entrar en modo Touch, dejar las mandíbulas SOBRE la aguja " +
+                 "en vez de en touchHome. Tiene prioridad sobre touchHome; si " +
+                 "no hay aguja en la escena, se usa touchHome igualmente.")]
+        public bool touchAnchorOnNeedle;
+
         [Tooltip("Ancla del Touch en el mundo. Si se deja vacío, se ancla donde esté el instrumento al conmutar (la posición buena del mando).")]
         public Transform touchHome;
         [Tooltip("Ajuste fino opcional del origen respecto al ancla (por defecto cero).")]
@@ -278,6 +283,8 @@ namespace SutureTrainer
         {
             _touchAnchorSet = true;
 
+            if (touchAnchorOnNeedle && TryAnchorOnNeedle()) return;
+
             if (touchHome != null)
             {
                 _touchAnchorPos = touchHome.position;
@@ -285,17 +292,65 @@ namespace SutureTrainer
                 return;
             }
 
-            if (!_armSearched)
-            {
-                _armSearched = true;
-                foreach (var a in FindObjectsByType<RoboticArm>(FindObjectsSortMode.None))
-                    if (a.master == this) { _armCache = a; break; }
-            }
+            FindArm();
 
             _touchAnchorRot = trackingSpace != null ? trackingSpace.rotation : Quaternion.identity;
             if (_armCache != null && _armCache.wrist != null) _touchAnchorPos = _armCache.wrist.position;
             else if (_armCache != null) _touchAnchorPos = _armCache.workspaceCenter;
             else _touchAnchorPos = trackingSpace != null ? trackingSpace.position : Vector3.zero;
+        }
+
+        void FindArm()
+        {
+            if (_armSearched) return;
+            _armSearched = true;
+            foreach (var a in FindObjectsByType<RoboticArm>(FindObjectsSortMode.None))
+                if (a.master == this) { _armCache = a; break; }
+        }
+
+        /// <summary>
+        /// Ancla el Touch de modo que las MANDÍBULAS queden sobre la aguja al
+        /// conmutar: el stylus empieza en su centro y el instrumento aparece ya
+        /// en posición de agarre, sin tener que ir a buscarla.
+        ///
+        /// El ancla NO es la posición de la aguja tal cual, porque entre el
+        /// ancla y las mandíbulas hay dos desfases encadenados:
+        ///
+        ///   WorldPos  = ancla                          (stylus centrado)
+        ///   muñeca    = WorldPos + rot * (0,0,0.05)    (RoboticArm, modo Absoluto)
+        ///   mandíbulas= muñeca + (jawAnchor - muñeca)  (jawAnchor sobre el modelo)
+        ///
+        /// Sin descontarlos, el instrumento aparece medio palmo pasado de la
+        /// aguja. El segundo desfase no es una constante: SceneBuilder recoloca
+        /// jawAnchor sobre las mandíbulas visibles del modelo importado, así
+        /// que se lee del brazo en runtime en vez de darlo por supuesto.
+        /// </summary>
+        bool TryAnchorOnNeedle()
+        {
+            var needle = FindFirstObjectByType<SutureNeedle>();
+            if (needle == null) return false;
+
+            FindArm();
+            if (_armCache == null || _armCache.wrist == null) return false;
+
+            _touchAnchorRot = trackingSpace != null ? trackingSpace.rotation : Quaternion.identity;
+
+            Vector3 avanceMano = _touchAnchorRot * new Vector3(0f, 0f, 0.05f);
+            Vector3 mandibulas = _armCache.jawAnchor != null
+                ? _armCache.jawAnchor.position - _armCache.wrist.position
+                : Vector3.zero;
+
+            _touchAnchorPos = needle.transform.position - avanceMano - mandibulas;
+
+            // El residuo tiene que ser ~0. Si sale grande, el desfase de las
+            // mandíbulas no es el que se cree y el instrumento aparecerá
+            // desplazado: se ve aquí antes que en el visor.
+            float residuo = Vector3.Distance(
+                _touchAnchorPos + avanceMano + mandibulas, needle.transform.position);
+            Debug.Log($"[Touch] Anclado sobre la aguja. Avance {avanceMano.magnitude * 1000f:F0} mm, " +
+                      $"mandíbulas {mandibulas.magnitude * 1000f:F0} mm, residuo {residuo * 1000f:F1} mm.");
+
+            return true;
         }
 
         /// <summary>

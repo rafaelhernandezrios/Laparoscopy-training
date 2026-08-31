@@ -115,6 +115,12 @@ namespace SutureTrainer.EditorTools
             touchHome.localPosition = new Vector3(0f, 0.04f, 0f);
             masterR.touchHome = touchHome;
 
+            // Al pasar a Touch (F1), el instrumento aparece YA sobre la aguja.
+            // Solo la derecha: es la mano que conmuta y la que agarra; hacerlo
+            // en la izquierda le mandaria el otro instrumento encima.
+            // touchHome queda de respaldo por si la escena no tiene aguja.
+            masterR.touchAnchorOnNeedle = true;
+
             // 2.5 amplificaba los ~16 cm del stylus a 40 cm de recorrido: para
             // acertar una diana de 14 mm había que afinar a 5.6 mm de mano.
             // La incisión mide ~80 mm, así que 1.2 (≈19 cm de recorrido) la
@@ -260,6 +266,12 @@ namespace SutureTrainer.EditorTools
             touchHome.SetParent(field, false);
             touchHome.localPosition = new Vector3(0f, 0.04f, 0f);
             masterR.touchHome = touchHome;
+
+            // Al pasar a Touch (F1), el instrumento aparece YA sobre la aguja.
+            // Solo la derecha: es la mano que conmuta y la que agarra; hacerlo
+            // en la izquierda le mandaria el otro instrumento encima.
+            // touchHome queda de respaldo por si la escena no tiene aguja.
+            masterR.touchAnchorOnNeedle = true;
 
             // 2.5 amplificaba los ~16 cm del stylus a 40 cm de recorrido: para
             // acertar una diana de 14 mm había que afinar a 5.6 mm de mano.
