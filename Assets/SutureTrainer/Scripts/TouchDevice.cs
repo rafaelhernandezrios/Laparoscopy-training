@@ -44,6 +44,26 @@ namespace SutureTrainer
         public static Vector3 AxisSign = new Vector3(-1f, 1f, -1f); // right-handed -> Unity (X invertido: izq/der)
         public static float ForceScale = 1f;                        // N mundo -> N dispositivo (~3.3 N máx)
 
+        /// <summary>
+        /// Invierte el sentido del ÚLTIMO grado del gimbal (el giro sobre el
+        /// propio eje del stylus). Cabeceo y guiñada se dejan como están.
+        ///
+        /// Es el residuo del desajuste que ya se compensa en
+        /// RoboticArm.touchRotationOffsetEuler: la conversión de orientación
+        /// cambia de mano (det -1) y la de posición no (det +1). Al conjugar por
+        /// una reflexión, el sentido de giro se invierte —D·R(n,θ)·D⁻¹ =
+        /// R(D·n, −θ) cuando det(D) = −1—, y eso se nota justo en el eje que no
+        /// arregló el giro de 180°.
+        ///
+        /// Se corrige por descomposición swing-twist en vez de con más ángulos
+        /// de Euler: así se toca SOLO el giro sobre el eje y no se mueve nada
+        /// de la orientación que ya está bien.
+        /// </summary>
+        public static bool InvertRoll = true;
+
+        /// <summary>Eje del stylus sobre el que se mide el giro a invertir.</summary>
+        public static Vector3 RollAxis = Vector3.forward;
+
         // Auto-recentrado: la posición del stylus al entrar se toma como origen.
         static Vector3 _devHome;
         static bool _hasHome;
@@ -119,7 +139,7 @@ namespace SutureTrainer
 
             // orientación (4x4 column-major) -> quaternion
             getTransform(DeviceName, _mat);
-            Quaternion devRot = MatrixToQuaternion(_mat);
+            Quaternion devRot = InvertirGiroPropio(MatrixToQuaternion(_mat));
 
             worldPos = AnchorPos + AnchorRot * local;
             worldRot = AnchorRot * devRot;
@@ -180,6 +200,38 @@ namespace SutureTrainer
 
         // Invierte los ejes de orientación que se toman del gimbal (para tuning).
         public static Vector3 RotAxisSign = new Vector3(1f, 1f, -1f);
+
+        /// <summary>
+        /// Devuelve la misma orientación pero con el giro sobre
+        /// <see cref="RollAxis"/> en sentido contrario.
+        ///
+        /// Descomposición swing-twist: la parte vectorial del cuaternión se
+        /// proyecta sobre el eje, lo que da el "twist" (giro propio); el resto
+        /// es el "swing" (hacia dónde apunta). Invertir solo el twist deja el
+        /// apuntado intacto, que es justo lo que hace falta aquí.
+        /// </summary>
+        static Quaternion InvertirGiroPropio(Quaternion q)
+        {
+            if (!InvertRoll) return q;
+
+            Vector3 eje = RollAxis.sqrMagnitude > 1e-8f ? RollAxis.normalized : Vector3.forward;
+            Vector3 proyeccion = Vector3.Project(new Vector3(q.x, q.y, q.z), eje);
+
+            var twist = new Quaternion(proyeccion.x, proyeccion.y, proyeccion.z, q.w);
+            float n = twist.x * twist.x + twist.y * twist.y +
+                      twist.z * twist.z + twist.w * twist.w;
+
+            // Stylus perpendicular al eje: el giro propio es indefinido y no hay
+            // nada que invertir.
+            if (n < 1e-8f) return q;
+
+            float inv = 1f / Mathf.Sqrt(n);
+            twist = new Quaternion(twist.x * inv, twist.y * inv, twist.z * inv, twist.w * inv);
+
+            // q = swing * twist  ->  swing * twist⁻¹ = q * twist⁻²
+            Quaternion twistInv = Quaternion.Inverse(twist);
+            return q * twistInv * twistInv;
+        }
 
         static Quaternion MatrixToQuaternion(double[] m)
         {

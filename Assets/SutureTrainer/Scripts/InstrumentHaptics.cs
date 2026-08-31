@@ -121,9 +121,12 @@ namespace SutureTrainer
             Vector3 tip = arm.TipPos;
             Vector3 vel = _hasTip ? (tip - _lastTip) / dt : Vector3.zero;
 
+            bool piel = _punctured;                  // antes de recalcular
             Vector3 fT = enableTissue ? TissueForce(tip, vel) : Vector3.zero;
             Vector3 fR = enableTrocar ? TrocarForce(tip, vel) : Vector3.zero;
             Vector3 force = fT + fR;
+
+            DetectarEventos(piel, vel);
 
             // ganancia de seguridad
             force *= Mathf.Clamp01(outputGain);
@@ -141,18 +144,104 @@ namespace SutureTrainer
             if (dF.magnitude > maxStep) dF = dF.normalized * maxStep;
             _fSent += dF;
 
-            _fSent = Vector3.ClampMagnitude(_fSent, maxTotalForce);
-            master.SendForce(_fSent);
+            // Transitorios DESPUÉS del filtro y del slew, a propósito.
+            //
+            // Un chasquido dura ~60 ms; el paso-bajo (50 ms) y el slew
+            // (25 N/s, o sea 1.5 N en esos 60 ms) lo redondearían hasta
+            // volverlo imperceptible. Lo que hace reconocible un detente es
+            // justo el flanco, así que se suma al final y solo lo recorta el
+            // tope de seguridad.
+            Vector3 salida = _fSent + Transitorio(dt);
+
+            salida = Vector3.ClampMagnitude(salida, maxTotalForce);
+            master.SendForce(salida);
 
             if (debugLog && Time.time >= _nextDbg)
             {
                 _nextDbg = Time.time + 0.4f;
                 Debug.Log($"[Haptics] tejido={(tissue != null)} enPiel={_inSkin} " +
                           $"pen={_lastPen * 1000f:F1}mm  |fTejido|={fT.magnitude:F2}N " +
-                          $"|fTrocar|={fR.magnitude:F2}N  gain={outputGain:F2}  |enviado|={_fSent.magnitude:F2}N");
+                          $"|fTrocar|={fR.magnitude:F2}N  gain={outputGain:F2}  " +
+                          $"agarrado={(arm.Held != null)} chasquido={_clickResta > 0f}  " +
+                          $"|enviado|={salida.magnitude:F2}N");
             }
 
             _lastTip = tip; _hasTip = true;
+        }
+
+        // ------------------------------------------------------------------
+        // Transitorios: los DOS momentos que un cirujano reconoce al tacto.
+        // ------------------------------------------------------------------
+
+        [Header("Chasquidos (transitorios)")]
+        [Tooltip("Golpe seco al cerrar las mandíbulas sobre la aguja.")]
+        public bool enableGraspClick = true;
+
+        [Tooltip("Intensidad del chasquido de agarre, en newtons.")]
+        public float graspClickForce = 1.2f;
+
+        [Tooltip("El 'cede' del momento en que la aguja rompe la piel.")]
+        public bool enablePunctureClick = true;
+
+        [Tooltip("Intensidad del cede de punción, en newtons.")]
+        public float punctureClickForce = 1.6f;
+
+        [Tooltip("Duración de los transitorios, en segundos.")]
+        public float clickSeconds = 0.06f;
+
+        Vector3 _clickDir;
+        float _clickMag;
+        float _clickResta;   // tiempo que le queda al transitorio
+        Graspable _agarradoAntes;
+
+        /// <summary>
+        /// Dispara un transitorio si acaba de ocurrir uno de los dos eventos.
+        /// </summary>
+        void DetectarEventos(bool pielAntes, Vector3 vel)
+        {
+            // --- agarrar / soltar la aguja ---
+            if (enableGraspClick && arm.Held != _agarradoAntes)
+            {
+                bool acabaDeAgarrar = arm.Held != null;
+                _agarradoAntes = arm.Held;
+
+                // Al agarrar, el golpe va CONTRA el avance: es el tope de unas
+                // mandíbulas que se cierran sobre algo sólido. Al soltar, más
+                // flojo: solo confirma que se ha ido.
+                Vector3 dir = arm.wrist != null ? arm.wrist.forward : Vector3.up;
+                Lanzar(-dir, graspClickForce * (acabaDeAgarrar ? 1f : 0.4f));
+            }
+
+            // --- romper la piel ---
+            // El flanco de _punctured es el instante exacto: TissueForce ya baja
+            // la rigidez a partir de ahí, pero esa caída es gradual y no se
+            // percibe como un evento.
+            if (enablePunctureClick && !pielAntes && _punctured)
+            {
+                // A favor del avance: la resistencia desaparece de golpe y la
+                // mano "cae" hacia dentro, que es lo que se siente de verdad.
+                Vector3 dir = vel.sqrMagnitude > 1e-6f ? vel.normalized : Vector3.down;
+                Lanzar(dir, punctureClickForce);
+            }
+        }
+
+        void Lanzar(Vector3 dir, float newtons)
+        {
+            if (dir.sqrMagnitude < 1e-8f) return;
+            _clickDir = dir.normalized;
+            _clickMag = newtons;
+            _clickResta = Mathf.Max(0.005f, clickSeconds);
+        }
+
+        /// <summary>Transitorio activo, decayendo linealmente hasta cero.</summary>
+        Vector3 Transitorio(float dt)
+        {
+            if (_clickResta <= 0f) return Vector3.zero;
+
+            float total = Mathf.Max(0.005f, clickSeconds);
+            Vector3 f = _clickDir * (_clickMag * (_clickResta / total));
+            _clickResta -= dt;
+            return f;
         }
 
         [Tooltip("Enviar también la fuerza como vibración cuando la mano usa el mando Quest.")]
