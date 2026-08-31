@@ -6,11 +6,25 @@ namespace SutureTrainer
     /// <summary>
     /// Láser de selección del controlador derecho para menús y panel de
     /// resultados. Se activa en el menú y al terminar un nivel.
-    /// También permite salir al menú manteniendo pulsado B/Y (~1 s).
+    /// También permite salir al menú manteniendo pulsado ~1 s el B/Y de la
+    /// mano indicada en exitMaster (la izquierda, para no chocar con el
+    /// tensado de la sutura, que vive en B/Y de la derecha).
     /// </summary>
     public class ControllerLaser : MonoBehaviour
     {
         public MasterInput master;
+
+        /// <summary>
+        /// Mano que atiende la salida rápida. Si queda vacía, la misma que
+        /// apunta con el láser.
+        ///
+        /// Se separa porque B/Y de la mano DERECHA ya significa "tensar la
+        /// sutura" (SutureRig), y en ST_06 eso chocaba: mantenerlo pulsado para
+        /// apretar el nudo te sacaba al menú al segundo. La izquierda no tensa,
+        /// así que el gesto de salir vive ahí y deja de pisar nada.
+        /// </summary>
+        public MasterInput exitMaster;
+
         public bool startActive;
         public float maxDistance = 6f;
         public float exitHoldSeconds = 1.0f;
@@ -80,18 +94,21 @@ namespace SutureTrainer
             lr.SetPosition(1, end);
         }
 
-        /// <summary>Mantener B/Y ~1 s en cualquier nivel → volver al menú.</summary>
+        /// <summary>
+        /// Mantener B/Y de la mano de salida ~1 s en cualquier nivel → menú.
+        /// </summary>
         void CheckQuickExit()
         {
-            if (master == null) return;
+            var salida = exitMaster != null ? exitMaster : master;
+            if (salida == null) return;
             if (SceneManager.GetActiveScene().name == GameFlow.MenuScene) return;
 
-            if (master.Secondary)
+            if (salida.Secondary)
             {
                 _exitHold += Time.deltaTime;
                 if (_exitHold >= exitHoldSeconds)
                 {
-                    master.Haptic(0.5f, 0.1f);
+                    salida.Haptic(0.5f, 0.1f);
                     GameFlow.LoadMenu();
                 }
             }

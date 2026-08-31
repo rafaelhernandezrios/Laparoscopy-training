@@ -123,6 +123,9 @@ namespace SutureTrainer.EditorTools
 
             var laser = mgr.AddComponent<ControllerLaser>();
             laser.master = masterR;
+            // Salir al menú con la IZQUIERDA: B/Y de la derecha ya tensa la
+            // sutura, y mantenerlo para apretar el nudo sacaba de la escena.
+            laser.exitMaster = masterL;
             laser.startActive = false;
 
             var armL = BuildArm(false, masterL, field);
@@ -266,6 +269,9 @@ namespace SutureTrainer.EditorTools
 
             var laser = mgr.AddComponent<ControllerLaser>();
             laser.master = masterR;
+            // Salir al menú con la IZQUIERDA: B/Y de la derecha ya tensa la
+            // sutura, y mantenerlo para apretar el nudo sacaba de la escena.
+            laser.exitMaster = masterL;
             laser.startActive = levelType == null;
 
             if (levelType == null)
@@ -855,7 +861,7 @@ namespace SutureTrainer.EditorTools
                 new Vector3(0f, 0.22f - 5 * 0.13f, -0.01f), GameFlow.OrganScene);
 
             MakeText(root.transform, "Help",
-                "Controles: gatillo = cerrar mandíbulas · mantener B/Y = salir al menú",
+                "Controles: gatillo = cerrar mandíbulas · mantener B/Y IZQUIERDO = salir al menú",
                 0.4f, new Vector3(0f, -0.56f, -0.005f), new Vector2(1.5f, 0.1f), new Color(0.6f, 0.6f, 0.65f));
         }
     }
