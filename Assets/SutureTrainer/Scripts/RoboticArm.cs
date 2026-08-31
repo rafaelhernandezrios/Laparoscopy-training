@@ -34,6 +34,20 @@ namespace SutureTrainer
         public ControlMode touchMode = ControlMode.Relativo;
         [Range(0.1f, 1.5f)] public float motionScale = 0.75f;
         public Vector3 rotationOffsetEuler = new Vector3(50f, 0f, 0f);
+
+        [Tooltip("Desfase de orientación cuando la mano usa el Touch. Ajústalo " +
+                 "en Play si la herramienta no apunta como el stylus.")]
+        // Los 180° en Y NO son un valor tanteado: TouchDevice convierte la
+        // posición con diag(-1,1,-1) y la orientación con diag(1,1,-1). El
+        // primero tiene determinante +1 (no cambia de mano: es un giro de 180°
+        // sobre Y) y el segundo -1 (sí lo cambia), así que las dos
+        // conversiones discrepan exactamente en ese giro. Con el gimbal
+        // apagado no se notaba porque la orientación era fija; al encenderlo,
+        // la herramienta sale del revés.
+        //
+        // Se corrige AQUÍ y no en TouchDevice porque tocar AxisSign cambiaría
+        // el mapeo de posición, que está tanteado y funciona.
+        public Vector3 touchRotationOffsetEuler = new Vector3(50f, 180f, 0f);
         public Vector3 workspaceCenter;
         public Vector3 workspaceExtents = new Vector3(0.45f, 0.30f, 0.35f);
         public float maxJawAngle = 28f;
@@ -139,7 +153,11 @@ namespace SutureTrainer
             // --- orientación de la muñeca (EndoWrist) ---
             if (master.IsTracked && !frozen)
             {
-                Quaternion goal = master.WorldRot * Quaternion.Euler(rotationOffsetEuler);
+                Vector3 desfase =
+                    master.ActiveBackend == MasterInput.Backend.TouchHaptic
+                        ? touchRotationOffsetEuler
+                        : rotationOffsetEuler;
+                Quaternion goal = master.WorldRot * Quaternion.Euler(desfase);
                 if (modo == ControlMode.Absoluto)
                     wrist.rotation = goal;
                 else
