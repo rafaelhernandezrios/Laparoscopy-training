@@ -16,6 +16,12 @@ namespace SutureTrainer
         protected override string LevelTitle => "Nivel 1 · Manejo de aguja";
 
         SutureNeedle needle;
+
+        // La aguja lleva hilo tambien aqui. Una aguja de sutura nunca va suelta,
+        // y manejarla sin el cabo colgando entrena un gesto que no existe: el
+        // hilo estorba, se engancha y hay que tenerlo en cuenta al girar la
+        // muneca, que es justo lo que este nivel enseña.
+        ThreadBase thread;
         Transform ghost;
         int done;
         float holdTimer;
@@ -38,6 +44,8 @@ namespace SutureTrainer
             var tray = SpawnTray(fieldRoot.position + new Vector3(0.16f, 0.03f, -0.06f));
             needle = SpawnNeedle(tray.transform.position + Vector3.up * 0.02f,
                 Quaternion.Euler(90f, 0f, 0f));
+
+            thread = SpawnThread(needle);
 
             ghost = BuildGhost();
             PlaceGhost(0);
