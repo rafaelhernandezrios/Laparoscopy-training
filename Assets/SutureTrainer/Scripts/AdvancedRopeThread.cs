@@ -45,6 +45,11 @@ namespace SutureTrainer
                  "comportamiento de los ejercicios ya calibrados.")]
         public bool collide = false;
 
+        [Tooltip("A qué ritmo desliza el hilo por los agujeros al tirar, en " +
+                 "segmentos por segundo. 10 son unos 16 cm/s de hilo, que es " +
+                 "un tirón de sutura creíble.")]
+        public float slideSegmentsPerSecond = 10f;
+
         public override float Tension => _tension;
         public override bool HasPins => pins.Count > 0;
 
@@ -75,6 +80,8 @@ namespace SutureTrainer
         float lastTensionEvent = -10f;
         bool tenseVisual;
         bool anchored;
+        float _slideDebt;        // fracción de segmento pendiente de deslizar
+        bool _avisadoSinCabo;
 
         bool Ready => rope != null && rope.Nodes != null && rope.Nodes.Count > 1;
         int NodeTotal => rope.Nodes.Count;
@@ -145,17 +152,26 @@ namespace SutureTrainer
             if (tailHolder != null) rope.PinNode(NodeTotal - 1, tailHolder);
 
             ComputeTension();
-            SlideThroughPins();
+            SlideThroughPins(Time.fixedDeltaTime);
         }
 
         // ------------------------------------------------------------------
         void ComputeTension()
         {
-            // Misma medida que VerletThread: estiramiento del tramo entre el
-            // ancla y el primer pin. Cambiarla movería los umbrales de los
-            // niveles sin querer.
+            // Se mide contra el ÚLTIMO pin, no contra el primero.
+            //
+            // VerletThread usaba pins[0] y es un error que solo se nota a
+            // partir del segundo punto: pins[0] es el primer agujero que se
+            // hizo nunca, y ese tramo ya no se toca. La tensión se quedaba
+            // midiendo una distancia que nadie estaba tirando, y en la sesión
+            // del 01-09 se ve congelada en 1.4288 durante segundos.
+            //
+            // El tramo que de verdad se tensa es el que va de la aguja al
+            // último agujero. Además así se cierra el lazo: al tirar sube la
+            // tensión, el hilo desliza, el tramo en reposo se alarga y la
+            // tensión baja. Es lo que hace un hilo pasando por un ojal.
             int end = pins.Count > 0
-                ? pins[0].index
+                ? pins[pins.Count - 1].index
                 : (tailHolder != null ? NodeTotal - 1 : -1);
 
             if (end <= 0) { _tension = 0f; SetTenseVisual(false); return; }
@@ -186,16 +202,46 @@ namespace SutureTrainer
         /// Es lo que hace que RemainingTailSegments baje y el nivel dé el punto
         /// por pasado, así que tiene que comportarse igual que en VerletThread.
         /// </summary>
-        void SlideThroughPins()
+        void SlideThroughPins(float dt)
         {
-            if (pins.Count < 2 || _tension < 1.05f) return;
+            if (pins.Count < 2 || _tension < 1.05f) { _slideDebt = 0f; return; }
 
             var last = pins[pins.Count - 1];
             var prev = pins[pins.Count - 2];
-            if (last.index >= NodeTotal - 4) return;
 
-            Repin(prev, prev.index + 1);
-            Repin(last, last.index + 1);
+            if (last.index >= NodeTotal - 4)
+            {
+                if (!_avisadoSinCabo)
+                {
+                    _avisadoSinCabo = true;
+                    Debug.LogWarning("[Hilo] Se acabó el cabo: no queda hilo que pasar " +
+                                     "por el último punto. Sube nodeCount o totalLength " +
+                                     "si el ejercicio necesita más puntos.");
+                }
+                return;
+            }
+
+            // A RITMO, no un índice por FixedUpdate.
+            //
+            // Sin límite esto avanzaba 50 índices por segundo —a 16 mm por
+            // segmento, 80 cm de hilo por segundo—, así que consumía los 70
+            // nodos del cabo en 1.3 s. A partir de ahí el hilo se quedaba
+            // clavado entre la aguja y un pin fijo, estirado, y se veía como
+            // una línea recta tirante en vez de un cabo. Eso es el "atorado".
+            _slideDebt += slideSegmentsPerSecond * dt;
+            if (_slideDebt < 1f) return;
+
+            int pasos = Mathf.FloorToInt(_slideDebt);
+            _slideDebt -= pasos;
+
+            pasos = Mathf.Min(pasos, NodeTotal - 4 - last.index);
+            if (pasos <= 0) return;
+
+            // El de más atrás primero: si se moviera antes el último, al
+            // repinar el anterior se desharía el pin recién puesto cuando
+            // quedan pegados.
+            Repin(prev, prev.index + pasos);
+            Repin(last, last.index + pasos);
         }
 
         /// <summary>Mueve un pin de nodo: suelta el viejo y ata el nuevo al mismo ancla.</summary>
@@ -263,6 +309,10 @@ namespace SutureTrainer
                 if (pin.anchor != null) Destroy(pin.anchor.gameObject);
             }
             pins.Clear();
+
+            // Reintentar un nivel tiene que empezar con el cabo entero.
+            _slideDebt = 0f;
+            _avisadoSinCabo = false;
         }
     }
 }
