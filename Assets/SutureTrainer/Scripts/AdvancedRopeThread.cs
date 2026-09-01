@@ -19,6 +19,10 @@ namespace SutureTrainer
     /// lleva su propio objeto ancla, que además es lo que permite cinchar
     /// (mover el ancla arrastra el nodo).
     /// </summary>
+    // Antes que VerletRopeGenerator (orden 0): su LateUpdate reconstruye la
+    // malla del hilo, y la corrección que lo apoya sobre el tejido tiene que
+    // estar aplicada ya cuando eso ocurre.
+    [DefaultExecutionOrder(-50)]
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
     public class AdvancedRopeThread : ThreadBase
@@ -49,6 +53,10 @@ namespace SutureTrainer
                  "segmentos por segundo. 10 son unos 16 cm/s de hilo, que es " +
                  "un tirón de sutura creíble.")]
         public float slideSegmentsPerSecond = 10f;
+
+        [Tooltip("Impide que el hilo se hunda en el tejido. Sin esto el cabo " +
+                 "cae dentro del órgano y el punto parece cortado de golpe.")]
+        public bool restOnTissue = true;
 
         public override float Tension => _tension;
         public override bool HasPins => pins.Count > 0;
@@ -82,6 +90,8 @@ namespace SutureTrainer
         bool anchored;
         float _slideDebt;        // fracción de segmento pendiente de deslizar
         bool _avisadoSinCabo;
+        TissuePatch _tejido;
+        float _proximaBusquedaTejido;
 
         bool Ready => rope != null && rope.Nodes != null && rope.Nodes.Count > 1;
         int NodeTotal => rope.Nodes.Count;
@@ -153,6 +163,68 @@ namespace SutureTrainer
 
             ComputeTension();
             SlideThroughPins(Time.fixedDeltaTime);
+        }
+
+        /// <summary>
+        /// Deja el hilo APOYADO sobre el tejido en vez de dentro.
+        ///
+        /// El hilo no colisiona (collide = false, heredado de VerletThread para
+        /// no cambiar ejercicios calibrados), así que la cola caía por gravedad
+        /// atravesando el órgano y se perdía dentro de la malla. En pantalla el
+        /// hilo llegaba al punto y se acababa ahí de golpe: ni lazo, ni cabo,
+        /// ni nada. Eso es lo que se veía "atorado" al suturar.
+        ///
+        /// Se resuelve con el mismo plano lógico que ya usa la háptica
+        /// (TissuePatch: centro de la herida y su normal), que es mucho más
+        /// barato y estable que colisionar 70 nodos contra 4735 vértices
+        /// deformables.
+        ///
+        /// Va en LateUpdate, y por eso la clase declara un orden de ejecución
+        /// adelantado: el rope reconstruye su malla en SU LateUpdate, así que
+        /// hay que corregir los nodos antes de que la dibuje.
+        /// </summary>
+        void LateUpdate()
+        {
+            if (!Ready || !restOnTissue) return;
+
+            if (_tejido == null)
+            {
+                if (Time.time < _proximaBusquedaTejido) return;
+                _proximaBusquedaTejido = Time.time + 0.5f;
+                _tejido = FindFirstObjectByType<TissuePatch>();
+                if (_tejido == null) return;
+            }
+
+            Transform t = _tejido.transform;
+            Vector3 n = t.up;
+            Vector3 centro = _tejido.WoundCenter;
+            float semiAncho = _tejido.width * 0.5f;
+            float semiFondo = _tejido.depth * 0.5f;
+
+            var nodos = rope.Nodes;
+            for (int i = 0; i < nodos.Count; i++)
+            {
+                var nodo = nodos[i];
+
+                // Los pines mandan: son los agujeros del tejido y están donde
+                // tienen que estar, aunque sea justo en la superficie.
+                if (nodo.isPinned) continue;
+
+                float altura = Vector3.Dot(nodo.position - centro, n);
+                if (altura >= radius) continue;
+
+                // Solo sobre la almohadilla; fuera de ella no hay tejido que
+                // sostenga nada y el hilo debe poder caer.
+                Vector3 local = t.InverseTransformPoint(nodo.position);
+                if (Mathf.Abs(local.x) > semiAncho || Mathf.Abs(local.z) > semiFondo) continue;
+
+                // Se mueve TAMBIÉN prevPosition: en Verlet la velocidad es la
+                // diferencia entre ambas, así que corregir solo position
+                // inyectaría un impulso y el hilo saldría disparado.
+                Vector3 correccion = n * (radius - altura);
+                nodo.position += correccion;
+                nodo.prevPosition += correccion;
+            }
         }
 
         // ------------------------------------------------------------------
