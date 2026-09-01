@@ -242,9 +242,17 @@ namespace SutureTrainer
             // último agujero. Además así se cierra el lazo: al tirar sube la
             // tensión, el hilo desliza, el tramo en reposo se alarga y la
             // tensión baja. Es lo que hace un hilo pasando por un ojal.
-            int end = pins.Count > 0
-                ? pins[pins.Count - 1].index
-                : (tailHolder != null ? NodeTotal - 1 : -1);
+            //
+            // "Último agujero" = pin de ÍNDICE MÍNIMO: con los puntos nuevos
+            // insertados del lado de la aguja, el más reciente es el de menor
+            // índice, no el último de la lista.
+            int end;
+            if (pins.Count > 0)
+            {
+                end = int.MaxValue;
+                foreach (var pin in pins) end = Mathf.Min(end, pin.index);
+            }
+            else end = tailHolder != null ? NodeTotal - 1 : -1;
 
             if (end <= 0) { _tension = 0f; SetTenseVisual(false); return; }
 
@@ -278,10 +286,11 @@ namespace SutureTrainer
         {
             if (pins.Count < 2 || _tension < 1.05f) { _slideDebt = 0f; return; }
 
-            var last = pins[pins.Count - 1];
-            var prev = pins[pins.Count - 2];
+            // Tope: el pin más cercano a la cola no puede salirse del cabo.
+            int maxIdx = 0;
+            foreach (var pin in pins) maxIdx = Mathf.Max(maxIdx, pin.index);
 
-            if (last.index >= NodeTotal - 4)
+            if (maxIdx >= NodeTotal - 4)
             {
                 if (!_avisadoSinCabo)
                 {
@@ -306,15 +315,24 @@ namespace SutureTrainer
             int pasos = Mathf.FloorToInt(_slideDebt);
             _slideDebt -= pasos;
 
-            pasos = Mathf.Min(pasos, NodeTotal - 4 - last.index);
+            pasos = Mathf.Min(pasos, NodeTotal - 4 - maxIdx);
             if (pasos <= 0) return;
 
-            // El de más atrás primero: si se moviera antes el último, al
-            // repinar el anterior se desharía el pin recién puesto cuando
-            // quedan pegados.
-            Repin(prev, prev.index + pasos);
-            Repin(last, last.index + pasos);
+            // TODOS los pines avanzan lo mismo: tirar de la aguja arrastra el
+            // hilo por todos los agujeros a la vez, y el trecho de hilo entre
+            // agujero y agujero no cambia (es el mismo material). Deslizar
+            // solo el último par —lo que hacía VerletThread— acortaba en falso
+            // el tramo entre puntos.
+            //
+            // De mayor índice a menor, para que ningún repin pise el nodo que
+            // el siguiente está a punto de dejar libre.
+            _ordenados.Clear();
+            _ordenados.AddRange(pins);
+            _ordenados.Sort((a, b) => b.index.CompareTo(a.index));
+            foreach (var pin in _ordenados)
+                Repin(pin, pin.index + pasos);
         }
+        readonly List<Pin> _ordenados = new List<Pin>();
 
         /// <summary>Mueve un pin de nodo: suelta el viejo y ata el nuevo al mismo ancla.</summary>
         void Repin(Pin pin, int newIndex)
@@ -330,7 +348,13 @@ namespace SutureTrainer
             if (!Ready) return;
 
             int i1 = NearestFreeNode(exitHole);
-            int i2 = Mathf.Min(i1 + 3, NodeTotal - 2);
+            if (i1 < 0)
+            {
+                Debug.LogWarning("[Hilo] No queda hilo libre entre la aguja y el último " +
+                                 "punto para fijar uno nuevo: tira para pasar más hilo.");
+                return;
+            }
+            int i2 = i1 + 3;   // NearestFreeNode ya garantiza que cabe
 
             AddPin(i1, exitHole);
             AddPin(i2, entryHole);
@@ -347,14 +371,30 @@ namespace SutureTrainer
             rope.PinNode(pin.index, a);
         }
 
+        /// <summary>
+        /// Nodo libre para el próximo punto, buscando SOLO entre la aguja y el
+        /// pin más cercano a ella. Devuelve -1 si no queda hueco.
+        ///
+        /// Antes buscaba al revés: por encima del pin más alto, hacia la cola.
+        /// Eso ordenaba los puntos al contrario de la física — en una sutura
+        /// real, el último agujero por el que pasó el hilo es el MÁS CERCANO a
+        /// la aguja a lo largo del hilo. Con el orden invertido, el cabo que
+        /// salía de la aguja pasaba primero por el punto 1 y luego tenía que
+        /// volver atrás hasta el punto 2: en la grabación del 01-09 se ve el
+        /// hilo cruzándose sobre la herida y haciendo un lazo que se sale
+        /// hasta la bandeja. Eso es "no seguir la secuencia".
+        /// </summary>
         int NearestFreeNode(Vector3 pos)
         {
-            int minIdx = 2;
-            foreach (var pin in pins) minIdx = Mathf.Max(minIdx, pin.index + 2);
+            // El nuevo par ocupa [i1, i1+3] y quiere 2 nodos de margen hasta el
+            // pin más bajo existente.
+            int techo = NodeTotal - 5;
+            foreach (var pin in pins) techo = Mathf.Min(techo, pin.index - 5);
+            if (techo < 2) return -1;
 
-            int best = Mathf.Min(minIdx, NodeTotal - 5);
+            int best = -1;
             float bestD = float.MaxValue;
-            for (int i = minIdx; i < NodeTotal - 4; i++)
+            for (int i = 2; i <= techo; i++)
             {
                 float d = Vector3.SqrMagnitude(rope.Nodes[i].position - pos);
                 if (d < bestD) { bestD = d; best = i; }
