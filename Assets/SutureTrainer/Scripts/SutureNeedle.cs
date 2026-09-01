@@ -53,6 +53,7 @@ namespace SutureTrainer
                 var visual = ArtSet.AttachVisual(art.needle, transform,
                                                  art.needleScale, art.needleEuler, offset);
                 if (visual != null) mr.enabled = art.showProceduralGuides;
+                _visual = visual;
             }
 
             Tip = new GameObject("Tip").transform;
@@ -64,6 +65,8 @@ namespace SutureTrainer
             Tail.SetParent(transform, false);
             Tail.localPosition = tailP;
 
+            PegarColaAlModeloVisible();
+
             var box = gameObject.GetComponent<BoxCollider>();
             if (box == null) box = gameObject.AddComponent<BoxCollider>();
             box.center = mesh.bounds.center;
@@ -74,6 +77,67 @@ namespace SutureTrainer
             rb.mass = 0.02f;
             rb.isKinematic = true; // se activa la gravedad al soltar (Graspable)
             rb.interpolation = RigidbodyInterpolation.None; // evita retraso visual al ir agarrada
+        }
+
+        Transform _visual;
+
+        [Tooltip("Llevar el punto de amarre del hilo al extremo del modelo que " +
+                 "se VE, en vez de dejarlo en el del arco procedural.")]
+        public bool anclarHiloAlModelo = true;
+
+        /// <summary>
+        /// Mueve Tail al extremo real de la aguja visible.
+        ///
+        /// El modelo importado se alinea sobre el arco procedural por el CENTRO
+        /// de sus bounds, no extremo con extremo: comparten el medio, pero cada
+        /// uno acaba donde acaba. Así que tailP —el extremo del arco
+        /// procedural— no tiene por qué caer sobre la aguja que se ve, y el
+        /// hilo salía flotando a un palmo de ella.
+        ///
+        /// El engarce es, por geometría, el punto de la aguja MÁS LEJANO a la
+        /// punta. Eso vale sea cual sea la escala o la orientación del modelo,
+        /// que es justo lo que no conviene dar por supuesto: es el mismo tipo
+        /// de desajuste que ya obligó a recolocar jawAnchor en el instrumento.
+        ///
+        /// Tip no se toca: los niveles miden la punción con él y funciona.
+        /// </summary>
+        void PegarColaAlModeloVisible()
+        {
+            if (!anclarHiloAlModelo || _visual == null || Tip == null) return;
+
+            Vector3 punta = Tip.position;
+            float mejorD = -1f;
+            Vector3 mejor = Tail.position;
+
+            foreach (var mf in _visual.GetComponentsInChildren<MeshFilter>(true))
+            {
+                var m = mf.sharedMesh;
+                if (m == null) continue;
+                foreach (var v in m.vertices)
+                {
+                    Vector3 w = mf.transform.TransformPoint(v);
+                    float d = (w - punta).sqrMagnitude;
+                    if (d > mejorD) { mejorD = d; mejor = w; }
+                }
+            }
+
+            foreach (var smr in _visual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                var m = smr.sharedMesh;
+                if (m == null) continue;
+                foreach (var v in m.vertices)
+                {
+                    Vector3 w = smr.transform.TransformPoint(v);
+                    float d = (w - punta).sqrMagnitude;
+                    if (d > mejorD) { mejorD = d; mejor = w; }
+                }
+            }
+
+            if (mejorD < 0f) return;
+
+            float movido = Vector3.Distance(Tail.position, mejor);
+            Tail.position = mejor;
+            Debug.Log($"[Aguja] Cola del hilo llevada al modelo visible: {movido * 1000f:F1} mm.");
         }
 
         /// <summary>

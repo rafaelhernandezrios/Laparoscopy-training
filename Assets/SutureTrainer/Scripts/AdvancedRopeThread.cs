@@ -58,6 +58,11 @@ namespace SutureTrainer
                  "cae dentro del órgano y el punto parece cortado de golpe.")]
         public bool restOnTissue = true;
 
+        [Tooltip("Segmentos de hilo que ocupa la parte enterrada de una " +
+                 "puntada. Con segmentos de 16 mm y labios a ~24 mm, 2 dan " +
+                 "32 mm: el sobrante justo para que sea un arco y no un lazo.")]
+        public int stitchSpanSegments = 2;
+
         public override float Tension => _tension;
         public override bool HasPins => pins.Count > 0;
 
@@ -210,6 +215,13 @@ namespace SutureTrainer
                 // tienen que estar, aunque sea justo en la superficie.
                 if (nodo.isPinned) continue;
 
+                // El tramo ENTRE los dos agujeros de un mismo punto va POR
+                // DENTRO del tejido: es la parte enterrada de la puntada.
+                // Empujarla hacia fuera la sacaba a la superficie y convertía
+                // cada punto en un lazo suelto encima de la herida, que es lo
+                // que hacía que la sutura no se leyera como una secuencia.
+                if (EstaEnterrado(i)) continue;
+
                 float altura = Vector3.Dot(nodo.position - centro, n);
                 if (altura >= radius) continue;
 
@@ -225,6 +237,24 @@ namespace SutureTrainer
                 nodo.position += correccion;
                 nodo.prevPosition += correccion;
             }
+        }
+
+        /// <summary>
+        /// ¿El nodo cae entre los dos agujeros de una misma puntada?
+        ///
+        /// Los pines van por parejas en orden de colocación: (0,1) es el primer
+        /// punto, (2,3) el segundo, y dentro de cada pareja el de menor índice
+        /// es la salida —el lado de la aguja— y el mayor la entrada.
+        /// </summary>
+        bool EstaEnterrado(int idx)
+        {
+            for (int k = 0; k + 1 < pins.Count; k += 2)
+            {
+                int a = Mathf.Min(pins[k].index, pins[k + 1].index);
+                int b = Mathf.Max(pins[k].index, pins[k + 1].index);
+                if (idx > a && idx < b) return true;
+            }
+            return false;
         }
 
         // ------------------------------------------------------------------
@@ -354,7 +384,7 @@ namespace SutureTrainer
                                  "punto para fijar uno nuevo: tira para pasar más hilo.");
                 return;
             }
-            int i2 = i1 + 3;   // NearestFreeNode ya garantiza que cabe
+            int i2 = i1 + Mathf.Max(1, stitchSpanSegments);   // NearestFreeNode garantiza que cabe
 
             AddPin(i1, exitHole);
             AddPin(i2, entryHole);
@@ -386,10 +416,11 @@ namespace SutureTrainer
         /// </summary>
         int NearestFreeNode(Vector3 pos)
         {
-            // El nuevo par ocupa [i1, i1+3] y quiere 2 nodos de margen hasta el
-            // pin más bajo existente.
-            int techo = NodeTotal - 5;
-            foreach (var pin in pins) techo = Mathf.Min(techo, pin.index - 5);
+            // El nuevo par ocupa [i1, i1+span] y quiere 2 nodos de margen hasta
+            // el pin más bajo que ya existe.
+            int span = Mathf.Max(1, stitchSpanSegments);
+            int techo = NodeTotal - 2 - span;
+            foreach (var pin in pins) techo = Mathf.Min(techo, pin.index - span - 2);
             if (techo < 2) return -1;
 
             int best = -1;
