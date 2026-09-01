@@ -63,6 +63,15 @@ namespace SutureTrainer
                  "32 mm: el sobrante justo para que sea un arco y no un lazo.")]
         public int stitchSpanSegments = 2;
 
+        [Tooltip("Segmentos de hilo entre dos puntos consecutivos. 2 dan " +
+                 "32 mm para una separación real de ~24 mm.")]
+        public int betweenStitchSegments = 2;
+
+        [Tooltip("Hilo que queda entre la aguja y el primer punto, en " +
+                 "segmentos. Solo fija dónde empieza; a partir del segundo " +
+                 "punto lo determina cuánto hilo se ha pasado.")]
+        public int leadSegments = 8;
+
         public override float Tension => _tension;
         public override bool HasPins => pins.Count > 0;
 
@@ -377,14 +386,14 @@ namespace SutureTrainer
         {
             if (!Ready) return;
 
-            int i1 = NearestFreeNode(exitHole);
+            int i1 = NextStitchNode();
             if (i1 < 0)
             {
                 Debug.LogWarning("[Hilo] No queda hilo libre entre la aguja y el último " +
                                  "punto para fijar uno nuevo: tira para pasar más hilo.");
                 return;
             }
-            int i2 = i1 + Mathf.Max(1, stitchSpanSegments);   // NearestFreeNode garantiza que cabe
+            int i2 = i1 + Mathf.Max(1, stitchSpanSegments);   // NextStitchNode garantiza que cabe
 
             AddPin(i1, exitHole);
             AddPin(i2, entryHole);
@@ -402,35 +411,40 @@ namespace SutureTrainer
         }
 
         /// <summary>
-        /// Nodo libre para el próximo punto, buscando SOLO entre la aguja y el
-        /// pin más cercano a ella. Devuelve -1 si no queda hueco.
+        /// Dónde del hilo se hace el próximo punto. Devuelve -1 si no queda
+        /// hilo libre entre la aguja y el punto anterior.
         ///
-        /// Antes buscaba al revés: por encima del pin más alto, hacia la cola.
-        /// Eso ordenaba los puntos al contrario de la física — en una sutura
-        /// real, el último agujero por el que pasó el hilo es el MÁS CERCANO a
-        /// la aguja a lo largo del hilo. Con el orden invertido, el cabo que
-        /// salía de la aguja pasaba primero por el punto 1 y luego tenía que
-        /// volver atrás hasta el punto 2: en la grabación del 01-09 se ve el
-        /// hilo cruzándose sobre la herida y haciendo un lazo que se sale
-        /// hasta la bandeja. Eso es "no seguir la secuencia".
+        /// NO se busca el nodo espacialmente más cercano al agujero, que es lo
+        /// que se hacía antes y es la causa del enredo. Ese rango abarca toda
+        /// la guía entre la aguja y el punto anterior, así que el nodo elegido
+        /// dependía de por dónde estuviera flotando el hilo en ese instante: si
+        /// caía uno bajo, entre los dos agujeros quedaban 13 segmentos —20 cm
+        /// de hilo para 24 mm de separación real— y ese sobrante es el lazo. Y
+        /// como cambiaba en cada punto, la maraña crecía a partir del segundo.
+        ///
+        /// La posición correcta no es geométrica sino de LONGITUD DE ARCO: el
+        /// punto nuevo se da con el hilo que hay justo detrás de la aguja, o
+        /// sea pegado al punto anterior a lo largo del hilo. Así el trecho
+        /// entre puntos es siempre el mismo y no depende del azar.
+        ///
+        /// El ciclo se sostiene solo: cada punto consume span + separación = 4
+        /// nodos hacia abajo, y el tirón que el nivel exige (pullSegments = 5)
+        /// vuelve a subir todos los pines, liberando ese hueco para el
+        /// siguiente. Si no se ha tirado bastante, no hay sitio y se avisa.
         /// </summary>
-        int NearestFreeNode(Vector3 pos)
+        int NextStitchNode()
         {
-            // El nuevo par ocupa [i1, i1+span] y quiere 2 nodos de margen hasta
-            // el pin más bajo que ya existe.
             int span = Mathf.Max(1, stitchSpanSegments);
-            int techo = NodeTotal - 2 - span;
-            foreach (var pin in pins) techo = Mathf.Min(techo, pin.index - span - 2);
-            if (techo < 2) return -1;
+            int hueco = Mathf.Max(1, betweenStitchSegments);
 
-            int best = -1;
-            float bestD = float.MaxValue;
-            for (int i = 2; i <= techo; i++)
-            {
-                float d = Vector3.SqrMagnitude(rope.Nodes[i].position - pos);
-                if (d < bestD) { bestD = d; best = i; }
-            }
-            return best;
+            if (pins.Count == 0)
+                return Mathf.Clamp(leadSegments, 2, NodeTotal - 2 - span);
+
+            int minPin = int.MaxValue;
+            foreach (var pin in pins) minPin = Mathf.Min(minPin, pin.index);
+
+            int i1 = minPin - hueco - span;
+            return i1 < 2 ? -1 : i1;
         }
 
         /// <summary>
