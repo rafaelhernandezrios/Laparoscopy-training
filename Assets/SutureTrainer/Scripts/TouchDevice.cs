@@ -24,12 +24,59 @@ namespace SutureTrainer
     ///   2) Edit > Project Settings > Player > Scripting Define Symbols
     ///      -> añade  OPENHAPTICS_TOUCH
     /// </summary>
-    public static class TouchDevice
+    public class TouchDevice
     {
-        // Nombre de configuración por defecto de OpenHaptics (el del demo).
-        const string DeviceName = "Default Device";
+        /// <summary>Nombre de configuración en OpenHaptics ("Default Device",
+        /// "Right Device", "Left Device"...). Lo fija Touch Setup.</summary>
+        public string DeviceName { get; private set; }
 
-        public static bool Available { get; private set; }
+        TouchDevice(string nombre) { DeviceName = nombre; }
+
+        // ---- Registro: un objeto por aparato fisico -------------------------
+        //
+        // Antes esto era una clase estatica cableada a "Default Device", con la
+        // calibracion (ancla, origen, escala) tambien estatica. Con dos robots
+        // eso no vale: compartirian ancla y punto de reposo. La API nativa si
+        // es por aparato -toda funcion recibe configName-, asi que el objeto
+        // pasa a ser uno por nombre.
+        static readonly System.Collections.Generic.Dictionary<string, TouchDevice> _porNombre =
+            new System.Collections.Generic.Dictionary<string, TouchDevice>();
+
+        public static TouchDevice For(string nombre)
+        {
+            if (string.IsNullOrEmpty(nombre)) nombre = "Default Device";
+            if (!_porNombre.TryGetValue(nombre, out var d))
+            {
+                d = new TouchDevice(nombre);
+                _porNombre[nombre] = d;
+            }
+            return d;
+        }
+
+        public static System.Collections.Generic.IEnumerable<TouchDevice> Todos => _porNombre.Values;
+
+        // startSchedulers() NO recibe nombre: arranca el bucle de servo de
+        // OpenHaptics para todo el proceso. Se llama una sola vez, tras
+        // inicializar el primer aparato; los que se conecten despues entran en
+        // el mismo bucle.
+        static bool _schedulersArrancados;
+
+        /// <summary>
+        /// Cierra TODOS los aparatos. disconnectAllDevices() es global, asi que
+        /// no puede colgar del OnDestroy de cada mano: la primera en morir
+        /// desconectaria tambien a la otra.
+        /// </summary>
+        public static void ShutdownAll()
+        {
+            foreach (var d in _porNombre.Values) d.SilenciarYMarcarCerrado();
+            _porNombre.Clear();
+            _schedulersArrancados = false;
+#if OPENHAPTICS_TOUCH
+            try { disconnectAllDevices(); } catch { }
+#endif
+        }
+
+        public bool Available { get; private set; }
 
         // ---- Calibración dispositivo -> mundo -------------------------------
         // getPosition entrega milímetros en el marco del dispositivo
@@ -37,12 +84,12 @@ namespace SutureTrainer
         // La pose del stylus se ancla a un punto de mundo (AnchorPos/AnchorRot,
         // normalmente el centro del campo quirúrgico) y se auto-recentra:
         //   worldPos = AnchorPos + AnchorRot * (LocalOffset + (devM - devHome) * scale)
-        public static Vector3 AnchorPos;
-        public static Quaternion AnchorRot = Quaternion.identity;
-        public static Vector3 LocalOffset = new Vector3(0f, 0f, 0f);
-        public static float WorkspaceScale = 2.5f;
-        public static Vector3 AxisSign = new Vector3(-1f, 1f, -1f); // right-handed -> Unity (X invertido: izq/der)
-        public static float ForceScale = 1f;                        // N mundo -> N dispositivo (~3.3 N máx)
+        public Vector3 AnchorPos;
+        public Quaternion AnchorRot = Quaternion.identity;
+        public Vector3 LocalOffset = new Vector3(0f, 0f, 0f);
+        public float WorkspaceScale = 2.5f;
+        public Vector3 AxisSign = new Vector3(-1f, 1f, -1f); // right-handed -> Unity (X invertido: izq/der)
+        public float ForceScale = 1f;                        // N mundo -> N dispositivo (~3.3 N máx)
 
         /// <summary>
         /// Invierte el sentido del ÚLTIMO grado del gimbal (el giro sobre el
@@ -64,23 +111,23 @@ namespace SutureTrainer
         /// residuo no era un giro propio. Se queda implementado para medirlo
         /// eje por eje en vez de seguir tanteando.
         /// </summary>
-        public static bool InvertRoll = false;
+        public bool InvertRoll = false;
 
         /// <summary>Eje del stylus sobre el que se mide el giro a invertir.</summary>
-        public static Vector3 RollAxis = Vector3.forward;
+        public Vector3 RollAxis = Vector3.forward;
 
         // Auto-recentrado: la posición del stylus al entrar se toma como origen.
-        static Vector3 _devHome;
-        static bool _hasHome;
-        public static void Recenter() { _hasHome = false; }
+        Vector3 _devHome;
+        bool _hasHome;
+        public void Recenter() { _hasHome = false; }
 
-        static bool _initTried, _inited;
+        bool _initTried, _inited;
 
         // Diagnóstico: log de posición y orientación (ponlo en true para verlo).
-        public static bool VerboseLog = false;
-        static float _nextLog;
+        public bool VerboseLog = false;
+        float _nextLog;
 
-        static void EnsureInit()
+        void EnsureInit()
         {
             if (_initTried) return;
             _initTried = true;
@@ -91,9 +138,13 @@ namespace SutureTrainer
                 Debug.Log($"[TouchDevice] initDevice(\"{DeviceName}\") -> {r}");
                 if (r >= 0)
                 {
-                    startSchedulers();
+                    if (!_schedulersArrancados)
+                    {
+                        startSchedulers();
+                        _schedulersArrancados = true;
+                    }
                     _inited = true;
-                    Debug.Log("[TouchDevice] Touch inicializado. Schedulers activos.");
+                    Debug.Log($"[TouchDevice] \"{DeviceName}\" inicializado. Schedulers activos.");
                 }
                 else
                 {
@@ -121,7 +172,7 @@ namespace SutureTrainer
         }
 
         /// <summary>Lee la pose del stylus ya convertida a espacio de mundo.</summary>
-        public static bool TryReadPose(out Vector3 worldPos, out Quaternion worldRot,
+        public bool TryReadPose(out Vector3 worldPos, out Quaternion worldRot,
                                        out float trigger, out bool secondary)
         {
             worldPos = default; worldRot = Quaternion.identity;
@@ -174,14 +225,14 @@ namespace SutureTrainer
 
         /// <summary>Envía una fuerza (espacio de MUNDO, newtons) al stylus.</summary>
         /// <summary>Última fuerza que se PIDIÓ al aparato, en newtons de dispositivo.</summary>
-        public static Vector3 LastRequested { get; private set; }
+        public Vector3 LastRequested { get; private set; }
 
         /// <summary>
         /// Fuerza que el aparato dice estar renderizando AHORA. Comparada con
         /// <see cref="LastRequested"/> distingue los dos fallos que se parecen:
         /// que no estemos mandando nada, o que mandemos y no salga.
         /// </summary>
-        public static Vector3 ReadCurrentForce()
+        public Vector3 ReadCurrentForce()
         {
 #if OPENHAPTICS_TOUCH
             if (!_inited) return Vector3.zero;
@@ -211,9 +262,9 @@ namespace SutureTrainer
         /// Se deja el camino viejo detrás de un interruptor para poder
         /// comparar los dos con getCurrentForce.
         /// </summary>
-        public static bool UseConstantForceEffect = true;
+        public bool UseConstantForceEffect = true;
 
-        public static void SetForceWorld(Vector3 worldForce)
+        public void SetForceWorld(Vector3 worldForce)
         {
             if (!_inited) return;
 #if OPENHAPTICS_TOUCH
@@ -257,7 +308,7 @@ namespace SutureTrainer
         /// La vibración es lo que el aparato ofrece para notificar: no compite
         /// con la fuerza sostenida y se apaga sola al cumplirse el tiempo.
         /// </summary>
-        public static void Pulse(Vector3 dir, float magnitude, float freqHz, float seconds)
+        public void Pulse(Vector3 dir, float magnitude, float freqHz, float seconds)
         {
 #if OPENHAPTICS_TOUCH
             if (!_inited) return;
@@ -271,7 +322,7 @@ namespace SutureTrainer
         }
 
         /// <summary>Último error del driver, o cadena vacía.</summary>
-        public static string ReadError()
+        public string ReadError()
         {
 #if OPENHAPTICS_TOUCH
             if (!_inited) return "";
@@ -287,28 +338,48 @@ namespace SutureTrainer
 #endif
         }
 
-        public static void Shutdown()
+        /// <summary>
+        /// Deja este aparato en silencio (fuerza y vibración a cero) sin
+        /// desconectar a nadie.
+        ///
+        /// Antes esto llamaba a disconnectAllDevices(), que es global, y colgaba
+        /// del OnDestroy de cada mano. Con un solo robot pasaba desapercibido;
+        /// con dos, la primera mano en destruirse desconectaría también la otra.
+        /// Desconectar es cosa de <see cref="ShutdownAll"/>.
+        /// </summary>
+        void SilenciarYMarcarCerrado()
         {
-            if (!_inited) return;
 #if OPENHAPTICS_TOUCH
-            try { setForce(DeviceName, _torqueZero, _torqueZero); disconnectAllDevices(); }
-            catch { }
+            if (_inited)
+            {
+                try
+                {
+                    if (UseConstantForceEffect)
+                        setConstantForceValues(DeviceName, _force, 0.0);
+                    else
+                        setForce(DeviceName, _torqueZero, _torqueZero);
+                    setVibrationValues(DeviceName, _vibDir, 0.0, 0.0, 0.0);
+                }
+                catch { }
+            }
 #endif
             _inited = false; _initTried = false; Available = false;
         }
 
+        public void Shutdown() => SilenciarYMarcarCerrado();
+
         // buffers reutilizados
-        static readonly double[] _pos = new double[3];
-        static readonly double[] _mat = new double[16];
-        static readonly double[] _force = new double[3];
-        static readonly double[] _forceRead = new double[3];
-        static readonly double[] _vibDir = new double[3];
-        static readonly double[] _torqueZero = new double[3];
-        static readonly int[] _btn = new int[8];
-        static readonly int[] _btnChg = new int[8];
+        readonly double[] _pos = new double[3];
+        readonly double[] _mat = new double[16];
+        readonly double[] _force = new double[3];
+        readonly double[] _forceRead = new double[3];
+        readonly double[] _vibDir = new double[3];
+        readonly double[] _torqueZero = new double[3];
+        readonly int[] _btn = new int[8];
+        readonly int[] _btnChg = new int[8];
 
         // Invierte los ejes de orientación que se toman del gimbal (para tuning).
-        public static Vector3 RotAxisSign = new Vector3(1f, 1f, -1f);
+        public Vector3 RotAxisSign = new Vector3(1f, 1f, -1f);
 
         /// <summary>
         /// Devuelve la misma orientación pero con el giro sobre
@@ -319,7 +390,7 @@ namespace SutureTrainer
         /// es el "swing" (hacia dónde apunta). Invertir solo el twist deja el
         /// apuntado intacto, que es justo lo que hace falta aquí.
         /// </summary>
-        static Quaternion InvertirGiroPropio(Quaternion q)
+        Quaternion InvertirGiroPropio(Quaternion q)
         {
             if (!InvertRoll) return q;
 
@@ -342,7 +413,7 @@ namespace SutureTrainer
             return q * twistInv * twistInv;
         }
 
-        static Quaternion MatrixToQuaternion(double[] m)
+        Quaternion MatrixToQuaternion(double[] m)
         {
             // OpenHaptics entrega 4x4 column-major, right-handed. Convertimos a
             // la mano de Unity con S = diag(1,1,-1):  R' = S * R * S  (negar las

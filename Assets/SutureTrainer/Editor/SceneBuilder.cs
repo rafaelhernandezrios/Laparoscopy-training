@@ -27,6 +27,17 @@ namespace SutureTrainer.EditorTools
         /// </summary>
         static readonly Vector3 FieldPos = new Vector3(0f, 1.08f, 0.55f);
 
+        /// <summary>
+        /// Nombres de configuración de OpenHaptics, los que fija Touch Setup.
+        ///
+        /// Con un solo robot el nombre es "Default Device" y es el que llevaba
+        /// la mano derecha. Con dos hay que distinguirlos: si Touch Setup los
+        /// nombró de otra forma, se cambia aquí y se reconstruye, o a mano en
+        /// el MasterInput de cada mano.
+        /// </summary>
+        const string RightDeviceName = "Right Device";
+        const string LeftDeviceName = "Left Device";
+
         static Dictionary<string, Material> mats;
         static ArtSet art;   // arte de la escena en construcción (puede ser null)
 
@@ -98,10 +109,13 @@ namespace SutureTrainer.EditorTools
             masterR.node = XRNode.RightHand;
             masterR.trackingSpace = camOffset;
             masterR.toggleKey = UnityEngine.InputSystem.Key.F1;
+            masterR.touchDeviceName = RightDeviceName;
 
             var masterL = mgr.AddComponent<MasterInput>();
             masterL.node = XRNode.LeftHand;
             masterL.trackingSpace = camOffset;
+            masterL.toggleKey = UnityEngine.InputSystem.Key.F2;
+            masterL.touchDeviceName = LeftDeviceName;
 
             // Ancla del Touch SOBRE el campo quirúrgico.
             //
@@ -131,6 +145,20 @@ namespace SutureTrainer.EditorTools
             // La incisión mide ~80 mm, así que 1.2 (≈19 cm de recorrido) la
             // cubre de sobra y deja el movimiento casi 1:1.
             masterR.touchWorkspaceScale = 1.2f;
+
+            // La izquierda, igual de calibrada que la derecha. Sin esto se
+            // quedaba con los valores por defecto (escala 2.5) y se anclaría
+            // donde estuviera su instrumento al conmutar, que es un punto
+            // cualquiera: el mismo fallo que ya se documentó para la derecha.
+            //
+            // NO se le pone touchAnchorOnNeedle: la aguja es de la mano
+            // derecha, y llevar ahí el instrumento izquierdo lo dejaría encima.
+            masterL.touchWorkspaceScale = 1.2f;
+            masterL.useDeviceOrientation = true;
+            var touchHomeL = new GameObject("TouchHome_L").transform;
+            touchHomeL.SetParent(field, false);
+            touchHomeL.localPosition = new Vector3(-0.10f, 0.04f, 0f);
+            masterL.touchHome = touchHomeL;
 
             var laser = mgr.AddComponent<ControllerLaser>();
             laser.master = masterR;
@@ -257,8 +285,11 @@ namespace SutureTrainer.EditorTools
             // romper si el Touch no está); pulsa F1 en runtime para cambiar, o
             // fija backend = TouchHaptic en el inspector / SceneBuilder.
             masterR.toggleKey = UnityEngine.InputSystem.Key.F1;
+            masterR.touchDeviceName = RightDeviceName;
             var masterL = mgr.AddComponent<MasterInput>();
             masterL.node = XRNode.LeftHand; masterL.trackingSpace = camOffset;
+            masterL.toggleKey = UnityEngine.InputSystem.Key.F2;
+            masterL.touchDeviceName = LeftDeviceName;
 
             // Ancla del Touch SOBRE el campo quirúrgico.
             //
@@ -288,6 +319,20 @@ namespace SutureTrainer.EditorTools
             // La incisión mide ~80 mm, así que 1.2 (≈19 cm de recorrido) la
             // cubre de sobra y deja el movimiento casi 1:1.
             masterR.touchWorkspaceScale = 1.2f;
+
+            // La izquierda, igual de calibrada que la derecha. Sin esto se
+            // quedaba con los valores por defecto (escala 2.5) y se anclaría
+            // donde estuviera su instrumento al conmutar, que es un punto
+            // cualquiera: el mismo fallo que ya se documentó para la derecha.
+            //
+            // NO se le pone touchAnchorOnNeedle: la aguja es de la mano
+            // derecha, y llevar ahí el instrumento izquierdo lo dejaría encima.
+            masterL.touchWorkspaceScale = 1.2f;
+            masterL.useDeviceOrientation = true;
+            var touchHomeL = new GameObject("TouchHome_L").transform;
+            touchHomeL.SetParent(field, false);
+            touchHomeL.localPosition = new Vector3(-0.10f, 0.04f, 0f);
+            masterL.touchHome = touchHomeL;
 
             var laser = mgr.AddComponent<ControllerLaser>();
             laser.master = masterR;
@@ -705,9 +750,11 @@ namespace SutureTrainer.EditorTools
                 }
             }
 
-            // Retroalimentación háptica de fuerza en el instrumento derecho
-            // (activa de verdad cuando esa mano usa el Touch; en Quest vibra).
-            if (right)
+            // Retroalimentación háptica de fuerza en LAS DOS manos.
+            //
+            // Estaba solo en la derecha porque solo había un robot. Con dos, la
+            // izquierda necesita su propio lazo de fuerza: es un componente por
+            // brazo y cada uno habla con el aparato de su MasterInput.
             {
                 var haptics = root.AddComponent<InstrumentHaptics>();
                 haptics.arm = arm;

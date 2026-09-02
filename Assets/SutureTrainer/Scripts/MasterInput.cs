@@ -36,6 +36,15 @@ namespace SutureTrainer
                  "no hay aguja en la escena, se usa touchHome igualmente.")]
         public bool touchAnchorOnNeedle;
 
+        [Tooltip("Nombre del aparato en OpenHaptics. Con un solo robot es " +
+                 "\"Default Device\"; con dos, los que haya configurado Touch " +
+                 "Setup, normalmente \"Right Device\" y \"Left Device\".")]
+        public string touchDeviceName = "Default Device";
+
+        /// <summary>Aparato físico de esta mano. Uno por nombre.</summary>
+        public TouchDevice Touch => _touch ?? (_touch = TouchDevice.For(touchDeviceName));
+        TouchDevice _touch;
+
         [Tooltip("Ancla del Touch en el mundo. Si se deja vacío, se ancla donde esté el instrumento al conmutar (la posición buena del mando).")]
         public Transform touchHome;
         [Tooltip("Ajuste fino opcional del origen respecto al ancla (por defecto cero).")]
@@ -135,13 +144,13 @@ namespace SutureTrainer
             {
                 // ancla la pose donde está el instrumento al conmutar (posición buena)
                 if (!_touchAnchorSet) CaptureTouchAnchor();
-                TouchDevice.AnchorPos = _touchAnchorPos;
-                TouchDevice.AnchorRot = _touchAnchorRot;
-                TouchDevice.LocalOffset = touchNudge;
-                TouchDevice.WorkspaceScale = touchWorkspaceScale;
-                TouchDevice.ForceScale = touchForceScale;
+                Touch.AnchorPos = _touchAnchorPos;
+                Touch.AnchorRot = _touchAnchorRot;
+                Touch.LocalOffset = touchNudge;
+                Touch.WorkspaceScale = touchWorkspaceScale;
+                Touch.ForceScale = touchForceScale;
 
-                if (TouchDevice.TryReadPose(out Vector3 tPos, out Quaternion tRot, out float tTrig, out bool tSec))
+                if (Touch.TryReadPose(out Vector3 tPos, out Quaternion tRot, out float tTrig, out bool tSec))
                 {
                     if (!useDeviceOrientation) tRot = _touchAnchorRot; // orientación fija
                     ApplyWorldPose(tPos, tRot, tTrig, 0f, tSec);
@@ -273,7 +282,7 @@ namespace SutureTrainer
             backend = b;
             _hasPose = false;
             _touchAnchorSet = false;                              // recaptura el ancla
-            if (b == Backend.TouchHaptic) TouchDevice.Recenter(); // arranca en el ancla
+            if (b == Backend.TouchHaptic) Touch.Recenter(); // arranca en el ancla
         }
 
         RoboticArm _armCache;
@@ -381,7 +390,7 @@ namespace SutureTrainer
 
             if (backend == Backend.TouchHaptic)
             {
-                TouchDevice.SetForceWorld(worldForce);
+                Touch.SetForceWorld(worldForce);
                 return;
             }
             // Fallback Quest: magnitud -> amplitud de vibración
@@ -407,7 +416,7 @@ namespace SutureTrainer
                 // La vibración es un efecto aparte: notifica sin competir con la
                 // fuerza sostenida, y se apaga sola al cumplirse el tiempo, así
                 // que además `duration` por fin significa algo aquí.
-                TouchDevice.Pulse(WorldRot * Vector3.forward,
+                Touch.Pulse(WorldRot * Vector3.forward,
                                   amplitude * pulseForce,
                                   pulseFrequency,
                                   Mathf.Max(0.01f, duration));
@@ -417,6 +426,9 @@ namespace SutureTrainer
                 _legacyDevice.SendHapticImpulse(0u, amplitude, duration);
         }
 
-        void OnDestroy() { TouchDevice.Shutdown(); }
+        // Silencia SOLO su aparato. Desconectar es global y lo hace
+        // TouchShutdown al terminar el juego: si cada mano llamara a
+        // disconnectAllDevices, la primera en morir se llevaría a la otra.
+        void OnDestroy() { if (_touch != null) _touch.Shutdown(); }
     }
 }
