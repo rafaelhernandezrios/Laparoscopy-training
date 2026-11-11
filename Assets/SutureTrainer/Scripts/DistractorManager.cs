@@ -155,6 +155,13 @@ namespace SutureTrainer
                     NivelPref = (Nivel + 1) % 4;
                     Aplicar(NivelPref, "manual");
                 }
+                if (kb.f9Key.wasPressedThisFrame)
+                {
+                    string r = EventMarkers.Verificar();
+                    Debug.Log("[Marcadores] Verificación: " + r);
+                    var hud = FindAnyObjectByType<HUD>();
+                    if (hud != null) hud.Flash("LSL: " + r, r.StartsWith("OK") ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.5f, 0.3f));
+                }
                 if (kb.f7Key.wasPressedThisFrame)
                 {
                     Adaptativo = !Adaptativo;

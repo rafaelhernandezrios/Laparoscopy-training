@@ -1,5 +1,6 @@
 using System.Collections;
 using System.IO;
+using Unity.Collections;
 using UnityEngine;
 
 namespace SutureTrainer
@@ -18,6 +19,14 @@ namespace SutureTrainer
         string _dir;
         int _frame;
 
+        // Audio: AudioRenderer entrega exactamente el audio de cada fotograma
+        // de captura, así que sale sincronizado con el vídeo aunque el editor
+        // vaya lento. Se escribe como WAV PCM 16 bits junto a los JPG.
+        FileStream _wav;
+        BinaryWriter _wavW;
+        int _canales, _muestras;
+        bool _audio;
+
         public static void Begin(string etiqueta)
         {
             if (Active != null) return;
@@ -34,6 +43,7 @@ namespace SutureTrainer
             Directory.CreateDirectory(_dir);
             Time.captureFramerate = Fps;
             KeyboardControls.Grabando = true;
+            IniciarAudio();
             StartCoroutine(Capturar());
             Debug.Log($"[Grabación] Grabando en {_dir}");
         }
@@ -44,6 +54,7 @@ namespace SutureTrainer
             while (true)
             {
                 yield return fin;
+                CapturarAudio();
                 var tex = ScreenCapture.CaptureScreenshotAsTexture();
                 if (tex == null) continue;
                 File.WriteAllBytes(Path.Combine(_dir, $"f_{_frame:D5}.jpg"), tex.EncodeToJPG(92));
@@ -52,16 +63,68 @@ namespace SutureTrainer
             }
         }
 
+        void IniciarAudio()
+        {
+            try
+            {
+                _canales = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+                _wav = new FileStream(Path.Combine(_dir, "audio.wav"), FileMode.Create);
+                _wavW = new BinaryWriter(_wav);
+                _wavW.Write(new byte[44]);          // cabecera, se rellena al cerrar
+                _audio = AudioRenderer.Start();
+                if (!_audio) Debug.LogWarning("[Grabación] AudioRenderer no arrancó: vídeo sin sonido.");
+            }
+            catch (System.Exception ex)
+            {
+                _audio = false;
+                Debug.LogWarning($"[Grabación] Sin audio: {ex.Message}");
+            }
+        }
+
+        void CapturarAudio()
+        {
+            if (!_audio) return;
+            int n = AudioRenderer.GetSampleCountForCaptureFrame();
+            if (n <= 0) return;
+            var buf = new NativeArray<float>(n * _canales, Allocator.Temp);
+            if (AudioRenderer.Render(buf))
+            {
+                for (int i = 0; i < buf.Length; i++)
+                    _wavW.Write((short)Mathf.Clamp(Mathf.RoundToInt(buf[i] * 32767f), -32768, 32767));
+                _muestras += n;
+            }
+            buf.Dispose();
+        }
+
+        void CerrarAudio()
+        {
+            if (_wavW == null) return;
+            if (_audio) AudioRenderer.Stop();
+            _audio = false;
+            int sr = AudioSettings.outputSampleRate, datos = _muestras * _canales * 2;
+            _wav.Seek(0, SeekOrigin.Begin);
+            _wavW.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); _wavW.Write(36 + datos);
+            _wavW.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt ")); _wavW.Write(16);
+            _wavW.Write((short)1); _wavW.Write((short)_canales); _wavW.Write(sr);
+            _wavW.Write(sr * _canales * 2); _wavW.Write((short)(_canales * 2)); _wavW.Write((short)16);
+            _wavW.Write(System.Text.Encoding.ASCII.GetBytes("data")); _wavW.Write(datos);
+            _wavW.Close();
+            _wavW = null; _wav = null;
+        }
+
         void Terminar()
         {
             StopAllCoroutines();
-            Debug.Log($"[Grabación] Terminada: {_frame} fotogramas a {Fps} fps en {_dir}");
+            CerrarAudio();
+            Debug.Log($"[Grabación] Terminada: {_frame} fotogramas a {Fps} fps en {_dir}" +
+                      (_muestras > 0 ? $" (+ audio {_muestras / (float)AudioSettings.outputSampleRate:0.0} s)" : ""));
             Destroy(gameObject);
         }
 
         void OnDestroy()
         {
             if (Active != this) return;
+            CerrarAudio();
             Time.captureFramerate = 0;
             KeyboardControls.Grabando = false;
             Active = null;

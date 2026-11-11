@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace SutureTrainer
@@ -12,9 +11,9 @@ namespace SutureTrainer
     /// al EEG con el mismo reloj. Además cada evento se guarda en el CSV de la
     /// sesión (eventos_*.csv) con el tiempo del intento y la marca LSL.
     ///
-    /// Requiere Assets/Plugins/x86_64/lsl.dll (liblsl, release oficial de
-    /// sccn/liblsl). Si no está —o en Quest/Android—, LSL se desactiva solo y
-    /// los eventos siguen yendo al CSV.
+    /// Usa el paquete LSL4Unity (com.labstreaminglayer.lsl4unity), que trae
+    /// liblsl para Windows, macOS y Linux. Donde no hay librería (Quest /
+    /// Android) LSL se desactiva solo y los eventos siguen yendo al CSV.
     ///
     /// Formato de marca: categoria/evento|clave=valor|... solo ASCII.
     /// </summary>
@@ -22,17 +21,18 @@ namespace SutureTrainer
     {
         public const string StreamName = "SutureTrainer_Markers";
 
-        static IntPtr _outlet = IntPtr.Zero;
+        static LSL.StreamOutlet _outlet;
         static bool _intentado;
 
-        public static bool LslActivo => _outlet != IntPtr.Zero;
+        public static bool LslActivo => _outlet != null;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Init()
         {
             _intentado = false;
-            _outlet = IntPtr.Zero;
+            _outlet = null;
             Iniciar();
+            Application.quitting -= Cerrar;
             Application.quitting += Cerrar;
         }
 
@@ -42,33 +42,68 @@ namespace SutureTrainer
             _intentado = true;
             try
             {
-                IntPtr info = Native.lsl_create_streaminfo(StreamName, "Markers", 1, 0.0, 3 /*cft_string*/,
-                                                           "suturetrainer_" + SystemInfo.deviceUniqueIdentifier);
-                _outlet = Native.lsl_create_outlet(info, 0, 360);
-                Debug.Log($"[Marcadores] Stream LSL '{StreamName}' publicado.");
+                var info = new LSL.StreamInfo(StreamName, "Markers", 1, LSL.LSL.IRREGULAR_RATE,
+                                              LSL.channel_format_t.cf_string,
+                                              "suturetrainer_" + SystemInfo.deviceUniqueIdentifier);
+                var desc = info.desc();
+                desc.append_child_value("manufacturer", "SutureTrainer");
+                desc.append_child_value("version", Application.version);
+                _outlet = new LSL.StreamOutlet(info);
+                Debug.Log($"[Marcadores] Stream LSL '{StreamName}' publicado (liblsl {LSL.LSL.library_version()}).");
             }
             catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException ||
-                                       ex is BadImageFormatException)
+                                       ex is BadImageFormatException || ex is TypeInitializationException)
             {
-                _outlet = IntPtr.Zero;
-                Debug.LogWarning("[Marcadores] liblsl no disponible (falta Assets/Plugins/x86_64/lsl.dll): " +
-                                 "los eventos solo se guardan en CSV.");
+                _outlet = null;
+                Debug.LogWarning($"[Marcadores] liblsl no disponible en esta plataforma: los eventos solo se guardan en CSV. ({ex.GetType().Name})");
             }
         }
 
         static void Cerrar()
         {
-            if (_outlet == IntPtr.Zero) return;
-            try { Native.lsl_destroy_outlet(_outlet); } catch { }
-            _outlet = IntPtr.Zero;
+            if (_outlet == null) return;
+            try { _outlet.Dispose(); } catch { }
+            _outlet = null;
         }
 
         /// <summary>Marca de tiempo en el reloj de LSL (o el de Unity si no hay LSL).</summary>
         public static double Ahora()
         {
-            if (_outlet != IntPtr.Zero)
-                try { return Native.lsl_local_clock(); } catch { }
+            if (_outlet != null)
+                try { return LSL.LSL.local_clock(); } catch { }
             return Time.realtimeSinceStartupAsDouble;
+        }
+
+        /// <summary>
+        /// Autoprueba (F9): busca el stream en la red como lo haría LabRecorder,
+        /// abre un receptor, envía "lsl/prueba" y comprueba que llega. Bloquea
+        /// ~1-3 s; es para usar antes de la sesión, no durante el ejercicio.
+        /// </summary>
+        public static string Verificar()
+        {
+            if (_outlet == null) return "LSL inactivo (sin liblsl en esta plataforma).";
+            try
+            {
+                var encontrados = LSL.LSL.resolve_stream("name", StreamName, 1, 3.0);
+                if (encontrados.Length == 0) return "El stream no aparece en la red (¿firewall o red sin multicast?).";
+                using (var inlet = new LSL.StreamInlet(encontrados[0]))
+                {
+                    inlet.open_stream(2.0);
+                    string marca = "lsl/prueba|" + System.DateTime.Now.ToString("HHmmss");
+                    Send(marca);
+                    var buf = new string[1];
+                    double t0 = LSL.LSL.local_clock();
+                    while (LSL.LSL.local_clock() - t0 < 2.0)
+                    {
+                        double ts = inlet.pull_sample(buf, 0.5);
+                        if (ts > 0 && buf[0] == marca)
+                            return $"OK: '{StreamName}' visible en {encontrados[0].hostname()} y el marcador llegó " +
+                                   $"({(LSL.LSL.local_clock() - ts) * 1000:0.0} ms).";
+                    }
+                    return "El stream se ve pero el marcador de prueba no llegó.";
+                }
+            }
+            catch (Exception ex) { return "Error en la verificación LSL: " + ex.Message; }
         }
 
         /// <summary>Envía un marcador. Usar solo ASCII (sin acentos).</summary>
@@ -76,35 +111,13 @@ namespace SutureTrainer
         {
             Iniciar();
             double ts = Ahora();
-            if (_outlet != IntPtr.Zero)
+            if (_outlet != null)
             {
-                try { Native.lsl_push_sample_str(_outlet, new[] { marca }); }
-                catch (Exception ex) { Debug.LogWarning($"[Marcadores] Fallo LSL: {ex.Message}"); _outlet = IntPtr.Zero; }
+                try { _outlet.push_sample(new[] { marca }, ts); }
+                catch (Exception ex) { Debug.LogWarning($"[Marcadores] Fallo LSL: {ex.Message}"); _outlet = null; }
             }
             MetricsRecorder.I?.AddEvent(marca, ts);
             Debug.Log($"[Marcador] {marca}");
-        }
-
-        static class Native
-        {
-            const string Dll = "lsl";
-
-            [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-            public static extern IntPtr lsl_create_streaminfo(string name, string type, int channel_count,
-                                                              double nominal_srate, int channel_format, string source_id);
-
-            [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-            public static extern IntPtr lsl_create_outlet(IntPtr info, int chunk_size, int max_buffered);
-
-            [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-            public static extern int lsl_push_sample_str(IntPtr outlet,
-                [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPStr)] string[] data);
-
-            [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-            public static extern double lsl_local_clock();
-
-            [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-            public static extern void lsl_destroy_outlet(IntPtr outlet);
         }
     }
 }
