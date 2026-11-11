@@ -58,6 +58,11 @@ namespace SutureTrainer
                  "cae dentro del órgano y el punto parece cortado de golpe.")]
         public bool restOnTissue = true;
 
+        [Tooltip("Gravedad del hilo (m/s²). Con 1.2 el tramo en el aire se veía " +
+                 "recto como un alambre; 5 da una caída natural sin que el cabo " +
+                 "se estire bajo su propio peso.")]
+        public float sagGravity = 5f;
+
         [Tooltip("Segmentos de hilo que ocupa la parte enterrada de una " +
                  "puntada. Con segmentos de 16 mm y labios a ~24 mm, 2 dan " +
                  "32 mm: el sobrante justo para que sea un arco y no un lazo.")]
@@ -125,7 +130,10 @@ namespace SutureTrainer
             rope = gameObject.AddComponent<VerletRopeGenerator>();
             rope.initializeOnStart = false;   // se inicializa aquí, con el ancla ya puesta
             rope.ropeRadius = radius;
-            rope.gravity = new Vector3(0f, -1.2f, 0f);
+            // ---- MODIFICADO ----: con -1.2 el hilo apenas caía y entre la aguja
+            // y la bandeja se veía como un alambre recto y tenso. Ahora que se
+            // apoya en las superficies (ThreadSurfaces) puede pesar de verdad.
+            rope.gravity = new Vector3(0f, -sagGravity, 0f);
             rope.airFriction = 1f;
             rope.stiffness = 1f;
             rope.constraintIterations = 12;
@@ -200,6 +208,30 @@ namespace SutureTrainer
         void LateUpdate()
         {
             if (!Ready || !restOnTissue) return;
+
+            // ---- MODIFICADO ----
+            // Primero las superficies reales (mesa/suelo, bandeja y la malla
+            // del hígado, ver ThreadSurfaces). Antes solo había un plano plano
+            // sobre el parche: fuera de él —y en las actividades 1-2, que no
+            // tienen parche— el hilo caía atravesando la bandeja y la mesa
+            // como un alambre recto, y sobre el hígado inclinado flotaba o se
+            // hundía según la zona.
+            bool algunaSuperficie = false;
+            var nodosS = rope.Nodes;
+            float holgura = radius + 0.0015f;   // por encima del suelo de la cavidad
+            for (int i = 0; i < nodosS.Count; i++)
+            {
+                var nodo = nodosS[i];
+                if (nodo.isPinned || EstaEnterrado(i)) continue;
+                if (!ThreadSurfaces.Altura(nodo.position, out float suelo)) continue;
+                algunaSuperficie = true;
+                float minimo = suelo + holgura;
+                if (nodo.position.y >= minimo) continue;
+                var correccion = Vector3.up * (minimo - nodo.position.y);
+                nodo.position += correccion;
+                nodo.prevPosition += correccion;
+            }
+            if (algunaSuperficie) return;   // el plano lógico queda solo como respaldo
 
             if (_tejido == null)
             {

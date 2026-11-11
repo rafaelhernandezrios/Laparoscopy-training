@@ -171,6 +171,14 @@ public class DeformableMesh : MonoBehaviour
         }
     }
     
+    /// <summary>Suelta los vértices atados a esa diana (la pinza abre el tejido).</summary>
+    public void ReleaseSuture(int _sutureIndex)
+    {
+        if (masterVertices == null) return;
+        foreach (var v in masterVertices)
+            if (v.isSuture && v.sutureIndex == _sutureIndex) v.isSuture = false;
+    }
+
     [Button]
     public void SutureVertices(int vertexIndex, int _sutureIndex, int _neighborCount = 0)
     {

@@ -75,7 +75,8 @@ namespace SutureTrainer
                                     (LaparoscopicScene.Centro.HasValue ? "_laparoscopica" : "_anterior"));
             yield return new WaitForSeconds(1.2f);   // plano inicial
 
-            if (_lvl is Level5_KnotTying l5) yield return Nudo(l5);
+            if (_lvl is Level7_BimanualStitch l7) yield return DosManos(l7);
+            else if (_lvl is Level5_KnotTying l5) yield return Nudo(l5);
             else if (_lvl is Level3_SimpleStitch l3) yield return Puntos(l3);
             else if (_lvl is Level2_RingPass l2) yield return Anillos(l2);
             else if (_lvl is Level1_NeedleHandling l1) yield return Poses(l1);
@@ -268,6 +269,106 @@ namespace SutureTrainer
             Vector3 vuelta = X() + Vector3.up * 0.06f;
             yield return Ir(MR, () => _needle.TipPos, () => vuelta, 0.005f, 5f, 0.10f);
             Debug.Log($"[PilotoNivel] Punto {i + 1}: {(pasado() ? "completado" : "hilo sin pasar")}.");
+        }
+
+        // ------------------------------------------------------------ actividad 7
+
+        IEnumerator EsperarPaso(Level7_BimanualStitch l7, Level7_BimanualStitch.Paso p, float tmax)
+        {
+            float t = 0f;
+            while (!_lvl.Finished && l7.CurrentStep != p && t < tmax) { t += Time.deltaTime; yield return null; }
+            if (!_lvl.Finished && l7.CurrentStep != p)
+                Debug.LogWarning($"[PilotoNivel] Dos manos: no se llegó a {p} (sigue en {l7.CurrentStep}).");
+        }
+
+        IEnumerator DosManos(Level7_BimanualStitch l7)
+        {
+            yield return Pinza(ML, 0f, 0.1f);
+            yield return AgarrarAguja();
+            var entries = F(l7, "entries") as PunctureTarget[];
+            var exits = F(l7, "exits") as PunctureTarget[];
+            var hilo = F(l7, "thread") as ThreadBase;
+            Vector3 reposoL = _l.TipPos;
+
+            for (int i = 0; i < l7.stitchPairs && !_lvl.Finished; i++)
+            {
+                var e = entries[i]; var x = exits[i];
+                Func<Vector3> E = () => e.transform.position;
+                Func<Vector3> X = () => x.transform.position;
+
+                // 1) contratracción: la izquierda toma el labio y lo presenta
+                Vector3 borde = l7.PuntoBorde(i);
+                yield return Pinza(ML, 0f, 0.2f);
+                yield return Ir(ML, () => _l.TipPos, () => borde + Vector3.up * 0.02f, 0.004f, 6f);
+                yield return Ir(ML, () => _l.TipPos, () => borde, 0.002f, 3f, 0.03f);
+                yield return Pinza(ML, 1f, 0.4f);
+                yield return EsperarPaso(l7, Level7_BimanualStitch.Paso.Clavar, 2f);
+                Vector3 alto = borde + Vector3.up * 0.008f;
+                yield return Ir(ML, () => _l.TipPos, () => alto, 0.001f, 1.5f, 0.02f);
+                Debug.Log($"[PilotoNivel] Dos manos {i + 1}: contratracción ({l7.CurrentStep}).");
+
+                // 2) clavar y atravesar con la derecha (como el punto simple)
+                float t = 0f;
+                while (t < 8f)
+                {
+                    Vector3 deseada = ((X() - E()).normalized * 0.5f + Vector3.down).normalized;
+                    GirarHacia(MR, _needle.TipDir, deseada);
+                    Vector3 d = E() + Vector3.up * 0.025f - _needle.TipPos;
+                    MR.KbNudge(Vector3.ClampMagnitude(d, speed * Time.deltaTime));
+                    if (d.magnitude < 0.003f && Vector3.Angle(_needle.TipDir, deseada) < 8f) break;
+                    t += Time.deltaTime;
+                    yield return null;
+                }
+                yield return Ir(MR, () => _needle.TipPos, E, 0.002f, 4f, 0.04f,
+                                () => l7.CurrentStep != Level7_BimanualStitch.Paso.Clavar);
+                Vector3 medio = (E() + X()) * 0.5f + Vector3.down * 0.01f;
+                yield return Ir(MR, () => _needle.TipPos, () => medio, 0.003f, 3f, 0.04f);
+                yield return Ir(MR, () => _needle.TipPos, X, 0.002f, 4f, 0.04f,
+                                () => l7.CurrentStep == Level7_BimanualStitch.Paso.Transferir);
+                yield return EsperarPaso(l7, Level7_BimanualStitch.Paso.Transferir, 1f);
+                // la punta asoma: se empuja un poco más para que la izquierda la alcance
+                Vector3 asoma = X() + Vector3.up * 0.012f + (X() - E()).normalized * 0.006f;
+                yield return Ir(MR, () => _needle.TipPos, () => asoma, 0.002f, 2f, 0.03f);
+
+                // 3) transferir: la izquierda suelta el tejido y toma la punta
+                yield return Pinza(ML, 0f, 0.3f);
+                yield return Ir(ML, () => _l.TipPos, () => _needle.TipPos + Vector3.up * 0.015f, 0.004f, 6f);
+                yield return Ir(ML, () => _l.TipPos, () => _needle.TipPos, 0.002f, 3f, 0.03f);
+                yield return Pinza(ML, 1f, 0.4f);
+                yield return EsperarPaso(l7, Level7_BimanualStitch.Paso.Traccion, 2f);
+                yield return Pinza(MR, 0f, 0.3f);              // la derecha suelta
+                Vector3 apartaR = _r.TipPos + Vector3.up * 0.05f;
+                yield return Ir(MR, () => _r.TipPos, () => apartaR, 0.004f, 2f);
+                Debug.Log($"[PilotoNivel] Dos manos {i + 1}: aguja en la izquierda ({l7.CurrentStep}).");
+
+                // 4) tracción con la izquierda (adaptativa, como el punto simple)
+                Vector3 dir = (Vector3.up + (X() - E()).normalized * 0.6f).normalized;
+                float dist = 0.10f, t4 = 0f;
+                while (!_lvl.Finished && l7.CurrentStep == Level7_BimanualStitch.Paso.Traccion && t4 < 15f)
+                {
+                    bool tenso = hilo != null && hilo.Tension >= 1.08f;
+                    if (!tenso) dist = Mathf.Min(dist + 0.10f * Time.deltaTime, 0.40f);
+                    Vector3 lejos = X() + dir * dist;
+                    ML.KbNudge(Vector3.ClampMagnitude(lejos - _l.TipPos, 0.12f * Time.deltaTime));
+                    t4 += Time.deltaTime;
+                    yield return null;
+                }
+
+                // 5) devolver: traer la aguja al campo y que la derecha la retome
+                Vector3 entrega = (E() + X()) * 0.5f + Vector3.up * 0.06f;
+                yield return Ir(ML, () => _l.TipPos, () => entrega, 0.005f, 5f, 0.10f);
+                var col = _needle.GetComponent<Collider>();
+                Func<Vector3> cuerpo = () => col != null ? col.ClosestPoint(_r.TipPos) : _needle.transform.position;
+                yield return Ir(MR, () => _r.TipPos, cuerpo, 0.003f, 6f);
+                yield return Pinza(MR, 1f, 0.4f);
+                yield return new WaitForSeconds(0.25f);
+                yield return Pinza(ML, 0f, 0.3f);              // la izquierda suelta
+                yield return Ir(ML, () => _l.TipPos, () => reposoL, 0.006f, 4f, 0.10f);
+                Vector3 arriba = _r.TipPos + Vector3.up * 0.03f;
+                yield return Ir(MR, () => _r.TipPos, () => arriba, 0.004f, 2f);
+                Debug.Log($"[PilotoNivel] Dos manos {i + 1}: {(Sostiene ? "aguja devuelta" : "aguja NO devuelta")}, paso {l7.CurrentStep}, transferencias {l7.Transfers}.");
+                if (!Sostiene) yield return AgarrarAguja();
+            }
         }
 
         // ------------------------------------------------------------ nivel 5

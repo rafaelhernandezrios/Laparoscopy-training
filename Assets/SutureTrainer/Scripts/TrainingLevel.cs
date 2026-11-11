@@ -174,6 +174,7 @@ namespace SutureTrainer
             tray.transform.SetParent(fieldRoot, false);
             tray.transform.position = worldPos;
             tray.transform.localScale = new Vector3(0.16f, 0.012f, 0.11f);
+            ThreadSurfaces.AddBox(tray.transform, "SuperficieHilo_Bandeja");   // el hilo se apoya, no la atraviesa
             if (MaterialSet.I != null)
                 tray.GetComponent<MeshRenderer>().sharedMaterial = MaterialSet.I.darkMetal;
             return tray;

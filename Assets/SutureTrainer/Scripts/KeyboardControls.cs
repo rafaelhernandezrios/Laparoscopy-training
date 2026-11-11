@@ -100,10 +100,10 @@ namespace SutureTrainer
             ActualizarCamara();
 
             // Navegación: sustituye al láser del mando en menú y resultados.
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 7; i++)
             {
                 if (!kb[Key.Digit1 + i].wasPressedThisFrame) continue;
-                GameFlow.Load(i < 5 ? GameFlow.Scenes[i + 1] : GameFlow.OrganScene);
+                GameFlow.Load(i < 5 ? GameFlow.Scenes[i + 1] : i == 5 ? GameFlow.OrganScene : GameFlow.BimanualScene);
                 return;
             }
             if (kb.lKey.wasPressedThisFrame && (kb.leftCtrlKey.isPressed || kb.rightCtrlKey.isPressed))

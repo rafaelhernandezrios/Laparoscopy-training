@@ -266,5 +266,29 @@ namespace SutureTrainer
         {
             if (Held != null) { Held.Detach(); Held = null; }
         }
+
+        /// <summary>
+        /// Toma un objeto aunque lo tenga el otro instrumento: es la
+        /// transferencia de aguja entre manos de la sutura intracorpórea.
+        /// encajar=false conserva la pose relativa (la izquierda toma la punta
+        /// por donde la alcanza); true la recoloca en el porta-agujas.
+        /// </summary>
+        public void ForceGrab(Graspable g, bool encajar = true)
+        {
+            if (g == null) return;
+            if (Held != null && Held != g) { Held.Detach(); Held = null; }
+            var otro = g.Holder;
+            if (otro != null && otro != this) otro.ClearHeld();
+            var aguja = g.GetComponent<SutureNeedle>();
+            if (aguja != null) aguja.SkipNextSnap = !encajar;
+            g.AttachTo(jawAnchor != null ? jawAnchor : wrist, this);
+            Held = g;
+            _wasClosed = true;
+            master?.Haptic(0.6f, 0.06f);
+            AudioFX.Click();
+        }
+
+        /// <summary>Olvida lo agarrado sin soltarlo (lo ha tomado el otro brazo).</summary>
+        public void ClearHeld() { Held = null; }
     }
 }
