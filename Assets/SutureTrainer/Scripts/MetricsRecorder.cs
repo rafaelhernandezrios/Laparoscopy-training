@@ -26,6 +26,14 @@ namespace SutureTrainer
         public readonly List<string> errors = new List<string>();
         readonly List<float> precisionSamples = new List<float>();
         readonly List<string> trajRows = new List<string>();
+        readonly List<string> eventRows = new List<string>();
+
+        /// <summary>Evento con marca LSL (lo llama EventMarkers). t_s = -1 fuera del intento.</summary>
+        public void AddEvent(string marca, double lslTs)
+        {
+            eventRows.Add(string.Format(CultureInfo.InvariantCulture, "{0:0.000};{1:0.000000};{2}",
+                Running ? ElapsedTime : -1f, lslTs, marca.Replace(';', ',')));
+        }
 
         float pathBaseL, pathBaseR;
         float sampleTimer;
@@ -145,6 +153,14 @@ namespace SutureTrainer
 
                 // trayectoria del intento
                 File.WriteAllLines(Path.Combine(dir, $"trayectoria_{scene}_{stamp}.csv"), trajRows);
+
+                // eventos (distractores, inicio/fin) alineables con el EEG por lsl_s
+                if (eventRows.Count > 0)
+                {
+                    var ev = new List<string> { "t_s;lsl_s;marcador" };
+                    ev.AddRange(eventRows);
+                    File.WriteAllLines(Path.Combine(dir, $"eventos_{scene}_{stamp}.csv"), ev);
+                }
 
                 // errores con timestamp
                 if (errors.Count > 0)

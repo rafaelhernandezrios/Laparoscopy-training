@@ -38,6 +38,8 @@ namespace SutureTrainer
             if (hud != null) hud.SetTitle(LevelTitle);
             Metrics.StartRun();
             Setup();
+            EventMarkers.Send($"nivel/inicio|escena={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}" +
+                              $"|distractores={(DistractorManager.I != null ? DistractorManager.I.Nivel : 0)}");
             // Los props del ejercicio ya existen: el lazo adaptativo puede fijar
             // radios de diana y umbrales de puntuación para este intento.
             AdaptiveDifficultyController.I?.ApplyBoundaryParameters();
@@ -81,6 +83,7 @@ namespace SutureTrainer
             if (leftArm != null) leftArm.frozen = true;
             if (rightArm != null) rightArm.frozen = true;
             var score = Metrics.Evaluate(parTimeSec, parPathMeters, maxErrors);
+            EventMarkers.Send($"nivel/fin|estrellas={score.stars}|errores={score.errorCount}|tiempo={score.time:0.0}");
             Metrics.Export(score);
             AdaptiveDifficultyController.I?.ExportTrace();
             AudioFX.Complete();

@@ -170,6 +170,12 @@ namespace SutureTrainer
             if (ropePinHole != null) ropePinHole.PinNode(sp);
             if (sutureManager != null) sutureManager.SutureVertices(sp, TargetFor(sp));
             Tint(sp);
+            // En las actividades con dianas la punción ya la marca PunctureTarget.
+            if (FindAnyObjectByType<TrainingLevel>() == null)
+            {
+                EventMarkers.Send("tarea/puncion|organo");
+                DistractorManager.Punzada(sp.transform.position);
+            }
             return true;
         }
 

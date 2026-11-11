@@ -45,7 +45,17 @@ namespace SutureTrainer
             Apply();
         }
 
-        public void SetState(State s) { CurrentState = s; Apply(); }
+        public void SetState(State s)
+        {
+            bool punzada = s == State.Done && CurrentState != State.Done;
+            CurrentState = s;
+            Apply();
+            if (punzada)
+            {
+                EventMarkers.Send($"tarea/puncion|{(isEntry ? "entrada" : "salida")}|par={pairIndex}");
+                DistractorManager.Punzada(transform.position);
+            }
+        }
 
         void Apply()
         {
