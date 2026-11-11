@@ -139,6 +139,15 @@ namespace SutureTrainer
                 Keyboard.current[toggleKey].wasPressedThisFrame)
                 SetBackend(backend == Backend.QuestController ? Backend.TouchHaptic : Backend.QuestController);
 
+            // --- Modo de pruebas con teclado y mouse (sin visor ni Touch) ---
+            if (KeyboardControls.Active)
+            {
+                if (!_kbActivo) { _kbActivo = true; _kbInit = false; }
+                UpdateKeyboard();
+                return;
+            }
+            _kbActivo = false;
+
             // --- Backend Touch (3D Systems / OpenHaptics) ---
             if (backend == Backend.TouchHaptic)
             {
@@ -275,6 +284,156 @@ namespace SutureTrainer
             AimWorldPos = WorldPos;
             AimWorldRot = WorldRot * Quaternion.Euler(aimFallbackPitch, 0f, 0f);
             IsTracked = true;
+        }
+
+        // ---------------------------------------------------------------
+        // Modo teclado y mouse. Produce la misma salida que el mando (pose de
+        // mundo + gatillo + secundario) para que RoboticArm, en modo
+        // Absoluto, no note la diferencia: muñeca = WorldPos + WorldRot*(0,0,0.05)
+        // y orientación = WorldRot * rotationOffsetEuler.
+        // ---------------------------------------------------------------
+        bool _kbActivo, _kbInit, _kbLatch;
+        Vector3 _kbPos, _kbHomePos;
+        Quaternion _kbRot = Quaternion.identity, _kbHomeRot = Quaternion.identity;
+        float _kbTrig;
+        Vector3 _kbNudge;
+
+        /// <summary>Desplazamiento de mundo extra para la muñeca (piloto automático).</summary>
+        public void KbNudge(Vector3 delta) => _kbNudge += delta;
+
+        Quaternion _kbGiro = Quaternion.identity;
+
+        /// <summary>Giro de mundo extra de la muñeca, sobre su propio punto (piloto automático).</summary>
+        public void KbRotate(Quaternion delta) => _kbGiro = delta * _kbGiro;
+
+        /// <summary>&gt;= 0: fija el cierre de la pinza (piloto automático). -1: teclado.</summary>
+        [System.NonSerialized] public float KbJawOverride = -1f;
+
+        static readonly Vector3 KbAvance = new Vector3(0f, 0f, 0.05f);
+
+        void UpdateKeyboard()
+        {
+            FindArm();
+            var arm = _armCache;
+
+            if (!_kbInit)
+            {
+                // Arrancar EXACTAMENTE donde está el instrumento: deshacer las
+                // dos transformaciones que aplica RoboticArm.
+                if (arm != null && arm.wrist != null)
+                {
+                    Quaternion desfase = Quaternion.Euler(arm.rotationOffsetEuler);
+                    _kbRot = arm.wrist.rotation * Quaternion.Inverse(desfase);
+                    _kbPos = arm.wrist.position - _kbRot * KbAvance;
+                }
+                _kbHomePos = _kbPos; _kbHomeRot = _kbRot;
+                _kbTrig = 0f; _kbLatch = false;
+                _kbInit = true;
+            }
+
+            var kb = Keyboard.current;
+            var mouse = Mouse.current;
+            bool activa = KeyboardControls.ActiveHand == node;
+
+            if (activa && kb != null)
+            {
+                float dt = Time.deltaTime;
+                bool fino = kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed;
+                float k = fino ? 0.25f : 1f;
+
+                var cam = KeyboardControls.ViewCamera;
+                Vector3 fwd = cam != null ? Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up) : Vector3.forward;
+                fwd = fwd.sqrMagnitude > 1e-4f ? fwd.normalized : Vector3.forward;
+                Vector3 right = Vector3.Cross(Vector3.up, fwd);
+                Vector3 camRight = cam != null ? cam.transform.right : right;
+                Vector3 camUp = cam != null ? cam.transform.up : Vector3.up;
+                Vector3 camFwd = cam != null ? cam.transform.forward : fwd;
+
+                if (kb.backspaceKey.wasPressedThisFrame) { _kbPos = _kbHomePos; _kbRot = _kbHomeRot; }
+
+                Vector3 muneca = _kbPos + _kbRot * KbAvance;
+
+                Vector3 mov = Vector3.zero;
+                if (kb.wKey.isPressed) mov += fwd;
+                if (kb.sKey.isPressed) mov -= fwd;
+                if (kb.dKey.isPressed) mov += right;
+                if (kb.aKey.isPressed) mov -= right;
+                if (kb.eKey.isPressed) mov += Vector3.up;
+                if (kb.qKey.isPressed) mov -= Vector3.up;
+                muneca += mov * (KeyboardControls.MoveSpeed * k * dt);
+
+                if (mouse != null)
+                {
+                    if (mouse.rightButton.isPressed)
+                    {
+                        Vector2 d = mouse.delta.ReadValue();
+                        muneca += (camRight * d.x + camUp * d.y) * (KeyboardControls.MouseSensitivity * k);
+                    }
+                    float sc = mouse.scroll.ReadValue().y;
+                    if (Mathf.Abs(sc) > 0.01f)
+                        muneca += camFwd * (Mathf.Sign(sc) * KeyboardControls.ScrollStep * k);
+                }
+
+                if (arm != null)
+                {
+                    Vector3 dd = muneca - arm.workspaceCenter;
+                    Vector3 e = arm.workspaceExtents;
+                    dd.x = Mathf.Clamp(dd.x, -e.x, e.x);
+                    dd.y = Mathf.Clamp(dd.y, -e.y, e.y);
+                    dd.z = Mathf.Clamp(dd.z, -e.z, e.z);
+                    muneca = arm.workspaceCenter + dd;
+                }
+
+                // giro alrededor de la muñeca, en ejes de la cámara
+                float p = 0f, y = 0f, r = 0f;
+                if (kb.iKey.isPressed) p -= 1f;
+                if (kb.kKey.isPressed) p += 1f;
+                if (kb.jKey.isPressed) y -= 1f;
+                if (kb.lKey.isPressed) y += 1f;
+                if (kb.uKey.isPressed) r += 1f;
+                if (kb.oKey.isPressed) r -= 1f;
+                float w = KeyboardControls.RotSpeed * k * dt;
+                Quaternion giro = Quaternion.AngleAxis(p * w, camRight) *
+                                  Quaternion.AngleAxis(y * w, Vector3.up) *
+                                  Quaternion.AngleAxis(r * w, camFwd);
+                _kbRot = (giro * _kbRot).normalized;
+                _kbPos = muneca - _kbRot * KbAvance;
+
+                if (kb.cKey.wasPressedThisFrame) _kbLatch = !_kbLatch;
+                bool cerrar = _kbLatch || kb.fKey.isPressed ||
+                              (mouse != null && mouse.leftButton.isPressed);
+                if (KbJawOverride < 0f)   // con el piloto automático manda él
+                    _kbTrig = Mathf.MoveTowards(_kbTrig, cerrar ? 1f : 0f, dt * 6f);
+                Secondary = kb.tKey.isPressed;
+            }
+            else
+            {
+                // la otra mano se queda quieta y conserva la pinza como estaba
+                Secondary = false;
+            }
+
+            // piloto automático: corre aunque esta no sea la mano activa
+            if (_kbGiro != Quaternion.identity)
+            {
+                Vector3 m = _kbPos + _kbRot * KbAvance;          // la muñeca no se mueve al girar
+                _kbRot = (_kbGiro * _kbRot).normalized;
+                _kbPos = m - _kbRot * KbAvance;
+                _kbGiro = Quaternion.identity;
+            }
+            if (_kbNudge != Vector3.zero) { _kbPos += _kbNudge; _kbNudge = Vector3.zero; }
+            if (KbJawOverride >= 0f)
+                _kbTrig = Mathf.MoveTowards(_kbTrig, KbJawOverride, Time.deltaTime * 6f);
+
+            KeyboardControls.ReportLatch(node, _kbLatch);
+
+            WorldPos = _kbPos;
+            WorldRot = _kbRot;
+            Trigger = _kbTrig;
+            Grip = 0f;
+            Clutch = false;
+            IsTracked = true;
+            AimWorldPos = WorldPos;
+            AimWorldRot = WorldRot * Quaternion.Euler(aimFallbackPitch, 0f, 0f);
         }
 
         public void SetBackend(Backend b)

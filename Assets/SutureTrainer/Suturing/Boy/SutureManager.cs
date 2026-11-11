@@ -100,6 +100,17 @@ public class SutureManager : MonoBehaviour
     [Button]
     public void TightenSuture()
     {
+        // ---- MODIFICADO RESPECTO A SuturingSimulator ----
+        // Con el órgano de este proyecto el tensado aproxima cada punto a su
+        // pareja del labio de enfrente (OrganRig). El algoritmo original de
+        // abajo empuja hacia los vecinos de la LISTA, a lo largo de la incisión,
+        // y abría la herida; se conserva solo para escenas sin OrganRig.
+        if (SutureTrainer.OrganRig.I != null)
+        {
+            SutureTrainer.OrganRig.I.ApproximatePairs(thightness);
+            return;
+        }
+
         if( sutureTightnessVertexAmount < 1)
             return;
         lastIndex = sutureVertices.Count - 1;
@@ -134,7 +145,8 @@ public class SutureManager : MonoBehaviour
     public void ResetSuturingPoints()
     {
         sutureVertices.Clear();
-        boyRopePinHole.UnpinAll();
+        if (boyRopePinHole != null) boyRopePinHole.UnpinAll();   // en los niveles no hay hilo Verlet
+        if (SutureTrainer.OrganRig.I != null) SutureTrainer.OrganRig.I.ClearSutures();
 
         deformedMesh.ResetSuturingPoints();
         

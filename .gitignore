@@ -112,3 +112,11 @@ InitTestScene*.unity*
 # Escena de recuperacion que Unity deja tras un cuelgue: no es fuente.
 /[Aa]ssets/_[Rr]ecovery/
 /[Aa]ssets/_[Rr]ecovery.meta
+Grabaciones/
+
+
+# Vídeos sueltos en la raíz y respaldos locales de sesiones de trabajo
+/*.mp4
+/_backup_claude_*/
+# Solución de Visual Studio generada por Unity
+*.slnx

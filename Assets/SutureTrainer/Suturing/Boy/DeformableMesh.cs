@@ -118,13 +118,16 @@ public class DeformableMesh : MonoBehaviour
 
             force += restorativeForce;
 
-            // Amortiguamiento
-            force += -v.velocity * damping;
+            // Amortiguamiento: se aplica más abajo de forma semi-implícita.
+            // ---- MODIFICADO RESPECTO A SuturingSimulator ----
+            // Sumado a la fuerza (explícito) es inestable cuando
+            // damping * dt > 2: con damping = 100 eso pasa por debajo de 50 fps
+            // (editor sin visor) y el tejido temblaba ~0.3 mm y cerraba menos.
 
             if(force.magnitude > maxVertexForce)
                 force = force.normalized * maxVertexForce;
             
-            v.velocity += force * dt;
+            v.velocity = (v.velocity + force * dt) / (1f + damping * dt);
             
             if (v.velocity.magnitude > maxVelocity)
                 v.velocity = v.velocity.normalized * maxVelocity;

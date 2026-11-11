@@ -145,6 +145,9 @@ namespace AdvancedRope
         #region --- Private Variables ---
         
         private float _segmentLength;
+
+        /// <summary>Longitud de reposo de cada segmento (añadido para SutureTrainer).</summary>
+        public float SegmentLength => _segmentLength;
         private Collider[] _collisionBuffer = new Collider[10];
         private List<Collider> _ignoreColliders = new List<Collider>();
         
@@ -256,7 +259,10 @@ namespace AdvancedRope
                 //SyncConnectedNodes();
                 
                 // Check collisions every second iteration (Optimization)
-                if(enableCollisions) 
+                // ---- MODIFICADO (SutureTrainer): el comentario lo decía pero el
+                // código colisionaba en TODAS las iteraciones; con el hilo largo
+                // eran miles de consultas de física por paso y caían los fps.
+                if(enableCollisions && ((i & 1) == 1 || i == constraintIterations - 1)) 
                     ResolveCollisions();
             }
 

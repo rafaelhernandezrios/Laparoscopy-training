@@ -12,6 +12,14 @@ namespace SutureTrainer
         protected override string LevelTitle => "Nivel 5 · Nudo intracorpóreo";
 
         readonly int[] wrapsPerThrow = { 2, 1, 1 };
+
+        [Tooltip("Punto del hilo cuyo giro alrededor de la pinza izquierda cuenta " +
+                 "como vuelta, en fracción de la longitud desde la aguja.\n\n" +
+                 "Era 0.25 fijo: con el hilo de 70 nodos ese punto (~27 cm) queda, " +
+                 "tras pasar el punto, al OTRO lado del agujero, en el cabo suelto, y " +
+                 "no gira por mucho que se mueva la aguja: el enrollado no se podía " +
+                 "completar. 0.06 (~6 cm) es hilo del lado de la aguja.")]
+        [Range(0.01f, 0.25f)] public float wrapSampleT = 0.06f;
         int currentThrow;
         int wrapsDone;
         float wrapAngleAcc;
@@ -98,7 +106,7 @@ namespace SutureTrainer
             Vector3 axis = (leftArm.wrist.position - leftArm.trocar.position).normalized;
 
             // punto medio del hilo entre aguja y tejido
-            Vector3 mid = thread.ParticleAt(0.25f);
+            Vector3 mid = thread.ParticleAt(wrapSampleT);
             Vector3 toMid = mid - axisOrigin;
             Vector3 radial = Vector3.ProjectOnPlane(toMid, axis);
             if (radial.magnitude < 0.01f || radial.magnitude > 0.25f) { hasRadial = false; return; }

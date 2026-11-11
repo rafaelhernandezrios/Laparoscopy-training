@@ -65,6 +65,7 @@ namespace SutureTrainer
         public bool logDiagnostics = false;
 
         bool _wasTightening;
+        bool _hiloAtado;
         bool _wasClosed;
         float _nextStatus;
 
@@ -103,6 +104,8 @@ namespace SutureTrainer
 
             // El proxy sigue la punta del instrumento teleoperado.
             transform.position = arm.TipPos;
+
+            AtarHiloALaAguja();
 
             // Tensar la sutura. En el original era Buttons[1] del stylus;
             // MasterInput.Secondary ya unifica B/Y del Quest y el botón trasero
@@ -144,6 +147,10 @@ namespace SutureTrainer
             foreach (var sp in FindObjectsByType<SuturePoint>(FindObjectsSortMode.None))
             {
                 if (sp.used) continue;
+                // Solo puntos de un par, y la salida después de su entrada.
+                // Sin esto se podía capturar SuturePoint_0b (no está en ningún
+                // par) y descolocar toda la secuencia de objetivos.
+                if (OrganRig.I != null && !OrganRig.I.CanSuture(sp)) continue;
                 float d = DistanceToTool(sp.transform.position);
                 if (d > captureRadius) continue;
                 if (d < bestDist) { bestDist = d; best = sp; }
@@ -224,6 +231,103 @@ namespace SutureTrainer
                 return Vector3.Distance(toolRenderer.bounds.ClosestPoint(worldPoint), worldPoint);
 
             return Vector3.Distance(arm.TipPos, worldPoint);
+        }
+
+        /// <summary>
+        /// Ata el nodo 0 del hilo Verlet a la cola de la aguja, una vez.
+        ///
+        /// En la escena el hilo no tenía extremo atado (connectedBodyStart y
+        /// initialPinPoints vacíos): nadie tiraba de él, el pin del primer
+        /// punto nunca se deslizaba y BoyRopePinHole ignoraba en silencio
+        /// todos los puntos siguientes. Se espera a que el hilo exista
+        /// (VerletRopeGenerator lo crea en su Start).
+        /// </summary>
+        void AtarHiloALaAguja()
+        {
+            if (_hiloAtado || ropePinHole == null || needle == null || needle.Tail == null) return;
+            var rope = ropePinHole.verletRopeGenerator;
+            if (rope == null || rope.Nodes == null || rope.Nodes.Count < 2) return;
+
+            // Rehacer el hilo PARTIENDO de la aguja y con la longitud que pide la
+            // sutura completa (10 puntos en zigzag ~35 cm); el de la escena
+            // medía 30 cm y nacía a 17 cm de la aguja, así que el primer
+            // segmento salía estirado desde el principio.
+            // Se tiende sobre la mesa en diagonal hacia delante-izquierda, por
+            // encima del órgano: tendido hacia fuera se salía por el borde y
+            // 40 cm de hilo colgando estiraban el primer tramo.
+            Vector3 a = needle.Tail.position;
+            var campo = GameObject.Find("SurgicalField");
+            Vector3 destino = (campo != null ? campo.transform.position : a) + new Vector3(-0.30f, 0f, -0.22f);
+            Vector3 dir = destino - a; dir.y = 0f;
+            dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector3.right;
+            rope.stiffness = ropeStiffness;
+            rope.constraintIterations = Mathf.Max(rope.constraintIterations, ropeIterations);
+            rope.ropeResolution = ropeResolution;
+            rope.ropeStartPoint = a;
+            rope.ropeEndPoint = a + dir * ropeLength;
+            rope.InitializeRope();
+
+            rope.PinNode(0, needle.Tail, Vector3.zero);
+            ropePinHole.slideThreshold = rope.SegmentLength * slideThresholdSegments;
+            _hiloAtado = true;
+            ConfigurarFisicaHilo(rope);
+            if (logCaptures) Debug.Log("[SutureRig] Hilo atado a la cola de la aguja.");
+        }
+
+        [Header("Física del hilo")]
+        [Tooltip("Rigidez del solver del hilo (0-1). El asset venía con 0.2: con " +
+                 "61 segmentos no converge y el hilo colgado se estiraba ~15x.")]
+        [Range(0.05f, 1f)] public float ropeStiffness = 1f;
+
+        [Tooltip("Longitud del hilo en metros. La sutura completa de 5 pares " +
+                 "consume ~35 cm más el cabo hasta la aguja.")]
+        public float ropeLength = 0.9f;
+
+        [Tooltip("Cuántos segmentos puede estirarse el tramo junto a un punto " +
+                 "antes de que el hilo corra por el agujero. El 0.047 m de la " +
+                 "escena era ~6 segmentos y el hilo junto a la aguja se veía " +
+                 "como una línea recta muy estirada.")]
+        public float slideThresholdSegments = 2.5f;
+
+        [Tooltip("Iteraciones del solver del hilo (mínimo).")]
+        public int ropeIterations = 32;
+
+        [Tooltip("Resolución del hilo (0-1). 0.3 con 60 cm da ~73 nodos de 8 mm: " +
+                 "suficiente para la sutura y barato de simular.")]
+        [Range(0.05f, 1f)] public float ropeResolution = 0.3f;
+
+        [Tooltip("Capa (sin nombre) con la que choca el hilo: superficie del " +
+                 "hígado y mesa. Separada para que el hilo no empuje la aguja ni " +
+                 "las pinzas.")]
+        [Range(8, 31)] public int ropeCollisionLayer = 30;
+
+        /// <summary>
+        /// El hilo no chocaba con nada (collisionLayer = Nothing): atravesaba el
+        /// hígado y la mesa y quedaba colgando, y con rigidez 0.2 el solver no
+        /// sostenía su propio peso. Se le da rigidez completa y una capa propia
+        /// con un collider del hígado (forma inicial) y otro de la mesa.
+        /// </summary>
+        void ConfigurarFisicaHilo(AdvancedRope.VerletRopeGenerator rope)
+        {
+
+            var organo = OrganRig.I != null ? OrganRig.I.deformable : null;
+            if (organo != null && organo.meshFilter != null)
+            {
+                var go = new GameObject("ColisionHilo_Higado") { layer = ropeCollisionLayer };
+                go.transform.SetParent(organo.transform, false);
+                go.AddComponent<MeshCollider>().sharedMesh = organo.meshFilter.sharedMesh;
+            }
+
+            var mesa = GameObject.Find("FieldBase");
+            if (mesa != null)
+            {
+                var go = new GameObject("ColisionHilo_Mesa") { layer = ropeCollisionLayer };
+                go.transform.SetParent(mesa.transform, false);
+                go.AddComponent<BoxCollider>();   // cubo unitario = el de la mesa
+            }
+
+            rope.collisionLayer = 1 << ropeCollisionLayer;
+            rope.enableCollisions = true;
         }
 
         void Capture(SuturePoint suturePoint, float dist)

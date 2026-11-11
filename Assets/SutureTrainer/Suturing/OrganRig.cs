@@ -60,6 +60,15 @@ namespace SutureTrainer
 
         bool _abierta;
 
+        /// <summary>
+        /// Puntos ya suturados: índice de su objetivo en
+        /// SutureManager.sutureVertices y posición del labio al suturarlo.
+        /// Hace falta para aproximar cada punto a SU PAREJA al tensar, en vez
+        /// de a sus vecinos de la lista (que es lo que abría la herida).
+        /// </summary>
+        readonly Dictionary<SuturePoint, (int idx, Vector3 inicio)> _suturados =
+            new Dictionary<SuturePoint, (int idx, Vector3 inicio)>();
+
         void Awake() { I = this; }
         void OnDestroy() { if (I == this) I = null; }
 
@@ -154,6 +163,8 @@ namespace SutureTrainer
             if (sp == null || sp.used) return false;
 
             sp.used = true;
+            if (sutureManager != null && sutureManager.sutureVertices != null)
+                _suturados[sp] = (sutureManager.sutureVertices.Count, sp.transform.position);
             // El hilo Verlet de AdvancedRope solo existe en el banco de pruebas;
             // dentro de un nivel el hilo visible es el del propio nivel.
             if (ropePinHole != null) ropePinHole.PinNode(sp);
@@ -201,8 +212,70 @@ namespace SutureTrainer
         /// </summary>
         public void Tighten()
         {
-            if (sutureManager != null) sutureManager.TightenSuture();
+            // ---- MODIFICADO ----
+            // Antes llamaba a SutureManager.TightenSuture(), que desplaza cada
+            // objetivo hacia sus vecinos EN LA LISTA, es decir, a lo largo de
+            // la incisión: la simulación con la malla real mostraba que en el
+            // nivel 4 dejaba la herida MÁS abierta que sin tensar. Ahora cierra
+            // del todo los pares cuyos dos labios ya están suturados.
+            ApproximatePairs(0f);
         }
+
+        /// <summary>
+        /// ¿Se puede suturar ya este punto? Solo los que forman parte de un par,
+        /// y la salida únicamente después de su entrada.
+        /// </summary>
+        public bool CanSuture(SuturePoint sp)
+        {
+            if (sp == null || sp.used) return false;
+            foreach (var p in pairs)
+            {
+                if (p.entry == sp) return true;
+                if (p.exit == sp) return p.entry == null || p.entry.used;
+            }
+            return false;   // p. ej. SuturePoint_0b: no pertenece a ningún par
+        }
+
+        /// <summary>
+        /// Lleva los dos labios de cada par suturado hacia el centro del par.
+        /// paso &lt;= 0: cierre completo; paso &gt; 0: avanza como mucho esa
+        /// distancia por llamada (tensado manual con B/Y, Espacio o el hilo).
+        /// </summary>
+        public bool ApproximatePairs(float paso)
+        {
+            if (sutureManager == null || sutureManager.sutureVertices == null) return false;
+
+            // El labio no llega a su objetivo: se queda en el equilibrio entre
+            // la sutura y el resorte al origen, ks/(ks+ko) del camino. Para que
+            // alcance el centro, el objetivo se pasa en esa proporción.
+            float ks = sutureManager.stiffnessSuture;
+            float ko = deformable != null ? deformable.stiffnessOrigin : 0f;
+            float sobre = ks > 0f ? (ks + ko) / ks : 1f;
+
+            var lista = sutureManager.sutureVertices;
+            bool alguno = false;
+            foreach (var p in pairs)
+            {
+                if (p.entry == null || p.exit == null) continue;
+                if (!_suturados.TryGetValue(p.entry, out var a)) continue;
+                if (!_suturados.TryGetValue(p.exit, out var b)) continue;
+
+                Vector3 centro = (a.inicio + b.inicio) * 0.5f;
+                Mover(lista, a.idx, a.inicio + (centro - a.inicio) * sobre, paso);
+                Mover(lista, b.idx, b.inicio + (centro - b.inicio) * sobre, paso);
+                alguno = true;
+            }
+            return alguno;
+        }
+
+        static void Mover(List<Vector3> l, int i, Vector3 meta, float paso)
+        {
+            if (i < 0 || i >= l.Count) return;
+            l[i] = paso > 0f ? Vector3.MoveTowards(l[i], meta, paso) : meta;
+        }
+
+        /// <summary>Olvida los puntos suturados (al reiniciar la sutura).</summary>
+        public void ClearSutures() => _suturados.Clear();
 
         /// <summary>
         /// Tiñe el marcador. Sin esto un punto suturado se ve idéntico a uno
