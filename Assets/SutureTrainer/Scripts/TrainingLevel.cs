@@ -33,6 +33,12 @@ namespace SutureTrainer
 
         protected virtual string LevelTitle => "Nivel";
 
+        /// <summary>
+        /// Largo del hilo del ejercicio (m). 1.1 m sobraba en todos: el cabo
+        /// llenaba la cavidad. Sin puntos basta con ~35 cm.
+        /// </summary>
+        protected virtual float ThreadLength => 0.35f;
+
         void Start()
         {
             if (hud != null) hud.SetTitle(LevelTitle);
@@ -158,6 +164,15 @@ namespace SutureTrainer
             var go = new GameObject("SutureThread");
             go.transform.SetParent(fieldRoot, false);
             ThreadBase th = ThreadFactory != null ? ThreadFactory(go) : go.AddComponent<VerletThread>();
+            // Largo por ejercicio, manteniendo segmentos de ~16 mm: los niveles
+            // miden el paso de hilo en segmentos. (VerletThread fija sus arrays
+            // en Awake, así que solo se ajusta el hilo de AdvancedRope.)
+            if (th is AdvancedRopeThread ar)
+            {
+                float largo = Mathf.Clamp(ThreadLength, 0.25f, 1.1f);
+                ar.nodeCount = Mathf.Max(12, Mathf.RoundToInt(ar.nodeCount * largo / ar.totalLength));
+                ar.totalLength = largo;
+            }
             th.anchor = needle.Tail;
             th.onTensionEvent += () =>
             {
@@ -176,10 +191,23 @@ namespace SutureTrainer
             tray.name = "Tray";
             tray.transform.SetParent(fieldRoot, false);
             tray.transform.position = worldPos;
-            tray.transform.localScale = new Vector3(0.16f, 0.012f, 0.11f);
+            var mr = tray.GetComponent<MeshRenderer>();
+            if (LaparoscopicScene.Pref)
+            {
+                // Dentro del abdomen no hay charola: la aguja se deja sobre una
+                // gasa laparoscópica (con su banda radiopaca azul). Más pequeña
+                // y baja, a la altura del campo, para no tapar el endoscopio.
+                tray.name = "Gasa";
+                tray.transform.position = worldPos + Vector3.down * 0.022f;
+                tray.transform.localScale = new Vector3(0.075f, 0.004f, 0.05f);
+                mr.sharedMaterial = Gasa.Material(MaterialSet.I != null ? MaterialSet.I.darkMetal : null);
+            }
+            else
+            {
+                tray.transform.localScale = new Vector3(0.16f, 0.012f, 0.11f);
+                if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.darkMetal;
+            }
             ThreadSurfaces.AddBox(tray.transform, "SuperficieHilo_Bandeja");   // el hilo se apoya, no la atraviesa
-            if (MaterialSet.I != null)
-                tray.GetComponent<MeshRenderer>().sharedMaterial = MaterialSet.I.darkMetal;
             return tray;
         }
 

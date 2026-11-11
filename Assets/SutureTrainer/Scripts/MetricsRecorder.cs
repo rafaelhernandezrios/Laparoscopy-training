@@ -85,6 +85,7 @@ namespace SutureTrainer
         {
             if (!Running) return;
             errors.Add($"[{ElapsedTime:0.0}s] {description}");
+            Debug.Log($"[Metricas] Error {errors.Count}: {description}");
         }
 
         public void AddTensionEvent() { if (Running) { TensionEvents++; AddError("Tensión excesiva del hilo"); } }

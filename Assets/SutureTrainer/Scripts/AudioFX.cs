@@ -77,7 +77,7 @@ namespace SutureTrainer
         {
             if (_fx == null) return;
             if (!_dist.TryGetValue(tipo, out var c) || c == null) return;
-            float vol = tipo == "alarma_alta" ? 0.55f : tipo == "voz" ? 0.6f : 0.45f;
+            float vol = tipo == "alarma_alta" ? 0.55f : tipo == "voz" ? 0.6f : tipo == "estimulo" ? 0.7f : 0.45f;
             _fx.PlayOneShot(c, vol);
         }
 
@@ -104,6 +104,7 @@ namespace SutureTrainer
             _dist["alarma_media"] = Clip("alarma_media", Alarma(523f, new[] { 0f, 0.25f, 0.5f, 1.6f, 1.85f, 2.1f }, 0.2f));
             _dist["alarma_alta"] = Clip("alarma_alta", Alarma(880f, new[] { 0f, 0.13f, 0.26f, 0.55f, 0.68f, 1.4f, 1.53f, 1.66f, 1.95f, 2.08f }, 0.11f));
             _dist["voz"] = Clip("voz", Voces(1.6f, 1, 777));
+            _dist["estimulo"] = Clip("estimulo", Concat(Tone(1500f, 0.07f, 0.7f, false), Silence(0.05f), Tone(1500f, 0.07f, 0.7f, false)));
         }
 
         static AudioClip Clip(string name, float[] data)

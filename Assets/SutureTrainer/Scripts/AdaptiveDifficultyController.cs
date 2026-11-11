@@ -56,6 +56,13 @@ namespace SutureTrainer
         public bool logTrace = true;
 
         // --- estado de la política ---
+        [Tooltip("Si los distractores están en modo adaptativo, la dificultad de " +
+                 "la tarea no se mueve: así cada condición adapta un solo eje.")]
+        public bool congelarConDistractoresAdaptativos = true;
+
+        bool CongeladoPorDistractores =>
+            congelarConDistractoresAdaptativos && DistractorManager.I != null && DistractorManager.I.Adaptativo;
+
         public float Difficulty { get; private set; }
         public Zone CurrentZone { get; private set; } = Zone.Optima;
         public float SmoothedScore { get; private set; }
@@ -159,7 +166,11 @@ namespace SutureTrainer
             if (_candidateCount >= persistWindows && _candidate != CurrentZone)
             {
                 CurrentZone = _candidate;
-                if (Time.time - _lastActionTime >= refractorySec)
+                // Un solo eje adaptativo por condición: si los distractores se
+                // adaptan, la dificultad de la tarea se sostiene (y viceversa
+                // basta con dejar los distractores en modo fijo).
+                if (CongeladoPorDistractores) action = "hold_distractores";
+                else if (Time.time - _lastActionTime >= refractorySec)
                 {
                     bool? perfOk = PerformanceOk();
 

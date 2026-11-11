@@ -249,7 +249,7 @@ namespace SutureTrainer
                 "Tensar sutura: T o Espacio · V cámara (" + NombreVista[_vista] + ")\n" +
                 "P = piloto automático (todas) · Shift+P = piloto + grabar vídeo\n" +
                 "1-7 actividades · M menú · F5 reintentar · N siguiente · Ctrl+L vista laparoscópica\n" +
-                "F6 nivel de distractores (0-3) · F7 distractores fijos/adaptativos\n" +
+                "F6 nivel de distractores (0-3) · F7 distractores fijos/adaptativos · F8 tarea secundaria (responder: R o grip)\n" +
                 "F3 volver a controles reales · H ocultar";
             GUI.Box(new Rect(10, 10, 430, 205), txt, estilo);
         }

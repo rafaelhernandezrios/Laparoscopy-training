@@ -48,6 +48,13 @@ namespace SutureTrainer
         protected override string LevelTitle =>
             string.IsNullOrEmpty(customTitle) ? "Nivel 3 · Punto simple" : customTitle;
 
+        /// <summary>
+        /// Lo que consume cada punto (~11 cm: 2 segmentos enterrados, 2 entre
+        /// puntos y 5 de tirón) más el tramo inicial y holgura. 1 punto (nudo)
+        /// 0.51 m, 3 puntos 0.73 m, 5 puntos (continua) 0.95 m.
+        /// </summary>
+        protected override float ThreadLength => 0.40f + stitchPairs * 0.11f;
+
         protected SutureNeedle needle;
         protected ThreadBase thread;
         protected TissuePatch tissue;
