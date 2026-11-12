@@ -198,7 +198,10 @@ namespace SutureTrainer
                 // gasa laparoscópica (con su banda radiopaca azul). Más pequeña
                 // y baja, a la altura del campo, para no tapar el endoscopio.
                 tray.name = "Gasa";
-                tray.transform.position = worldPos + Vector3.down * 0.022f;
+                // A la altura de la antigua charola: más abajo, la aguja apoyada
+                // queda bajo el plano del TissuePatch (que cubre también esta
+                // zona) y cuenta una "punción fuera de la diana" cada 1.5 s.
+                tray.transform.position = worldPos + Vector3.down * 0.004f;
                 tray.transform.localScale = new Vector3(0.075f, 0.004f, 0.05f);
                 mr.sharedMaterial = Gasa.Material(MaterialSet.I != null ? MaterialSet.I.darkMetal : null);
             }

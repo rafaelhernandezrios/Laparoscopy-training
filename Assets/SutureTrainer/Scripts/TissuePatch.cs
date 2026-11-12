@@ -31,6 +31,11 @@ namespace SutureTrainer
         Mesh mesh;
         Vector3[] baseVerts, verts;
         float lastBadPuncture = -10f;
+        // La punta tiene que haber estado ENCIMA del tejido para que bajar de él
+        // cuente como punción. Si no, la aguja apoyada en la gasa (más baja que
+        // el plano, pero dentro de su huella) o al levantarla de ahí sumaba una
+        // "punción fuera de la diana" cada 1.5 s sin tocar nada.
+        bool _vistaEncima;
 
         public float SurfaceY => transform.position.y;
         public Vector3 WoundCenter => transform.position;
@@ -139,10 +144,11 @@ namespace SutureTrainer
             Vector3 local = transform.InverseTransformPoint(tip);
             bool overPad = Mathf.Abs(local.x) < width * 0.5f && Mathf.Abs(local.z) < depth * 0.5f;
 
+            if (!overPad || local.y > 0f) _vistaEncima = overPad && local.y > 0f;
             if (overPad && local.y < 0.02f)
             {
                 Deform(local);
-                if (local.y < -0.008f && !punctureAllowed && Time.time - lastBadPuncture > 1.5f)
+                if (_vistaEncima && local.y < -0.008f && !punctureAllowed && Time.time - lastBadPuncture > 1.5f)
                 {
                     lastBadPuncture = Time.time;
                     onBadPuncture?.Invoke(tip);

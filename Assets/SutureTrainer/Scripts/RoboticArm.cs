@@ -137,6 +137,7 @@ namespace SutureTrainer
                     _lastMaster = master.WorldPos;
                     if (!master.Clutch)
                         _target += delta * motionScale;
+                    _target += master.ConsumirExtraGuia();   // reproducción háptica fuera del alcance del stylus
                 }
             }
             else { _hasMaster = false; }

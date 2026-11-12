@@ -155,6 +155,18 @@ namespace SutureTrainer
                     NivelPref = (Nivel + 1) % 4;
                     Aplicar(NivelPref, "manual");
                 }
+                if (kb.f10Key.wasPressedThisFrame)
+                    ReproduccionHaptica.Alternar(kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed);
+                if (kb.f11Key.wasPressedThisFrame) PruebaResorte.Lanzar();
+                if (kb.f12Key.wasPressedThisFrame)
+                {
+                    MasterInput.OrientacionTouch = !MasterInput.OrientacionTouch;
+                    string m = MasterInput.OrientacionTouch ? "Orientación del Touch: GIMBAL del stylus"
+                                                            : "Orientación del Touch: TECLADO (I/K J/L U/O)";
+                    Debug.Log("[Touch] " + m);
+                    var hud2 = FindAnyObjectByType<HUD>();
+                    if (hud2 != null) hud2.Flash(m, new Color(0.5f, 0.85f, 1f));
+                }
                 if (kb.f9Key.wasPressedThisFrame)
                 {
                     string r = EventMarkers.Verificar();

@@ -25,6 +25,14 @@ namespace SutureTrainer
 
         public static LevelAutopilot Running { get; private set; }
 
+        /// <summary>
+        /// 1 = velocidad normal. Con el robot Touch guiando (ReproduccionHaptica)
+        /// sube a 2: la trayectoria va a la mitad de velocidad y los tiempos
+        /// límite se duplican, para que el aparato la pueda seguir.
+        /// </summary>
+        public static float Lentitud = 1f;
+        float L => Mathf.Max(1f, Lentitud);
+
         TrainingLevel _lvl;
         RoboticArm _r, _l;
         SutureNeedle _needle;
@@ -72,7 +80,8 @@ namespace SutureTrainer
             Debug.Log($"[PilotoNivel] Inicio en {escena} ({_lvl.GetType().Name}).");
             if (_grabar)
                 VideoRecorder.Begin((escena.Length > 5 ? escena.Substring(0, 5) : escena) +
-                                    (LaparoscopicScene.Centro.HasValue ? "_laparoscopica" : "_anterior"));
+                                    (LaparoscopicScene.Centro.HasValue ? "_laparoscopica" : "_anterior") +
+                                    (ReproduccionHaptica.Running != null ? "_robot" : ""));
             yield return new WaitForSeconds(1.2f);   // plano inicial
 
             if (_lvl is Level7_BimanualStitch l7) yield return DosManos(l7);
@@ -90,6 +99,7 @@ namespace SutureTrainer
         {
             if (_r != null) MR.KbJawOverride = -1f;
             if (_l != null) ML.KbJawOverride = -1f;
+            ReproduccionHaptica.AlTerminarPiloto();
             VideoRecorder.End();
             Debug.Log($"[PilotoNivel] Fin ({motivo}).");
             if (Running == this) Running = null;
@@ -103,8 +113,8 @@ namespace SutureTrainer
         IEnumerator Ir(MasterInput m, Func<Vector3> actual, Func<Vector3> obj,
                        float tol = 0.002f, float tmax = 6f, float vel = -1f, Func<bool> parar = null)
         {
-            float v = vel > 0f ? vel : speed, t = 0f;
-            while (t < tmax)
+            float v = (vel > 0f ? vel : speed) / L, t = 0f;
+            while (t < tmax * L)
             {
                 if (parar != null && parar()) yield break;
                 Vector3 d = obj() - actual();
@@ -128,7 +138,7 @@ namespace SutureTrainer
             d.ToAngleAxis(out float ang, out Vector3 eje);
             if (ang > 180f) ang -= 360f;
             if (Mathf.Abs(ang) < 0.5f || eje.sqrMagnitude < 1e-6f) return;
-            m.KbRotate(Quaternion.AngleAxis(Mathf.Sign(ang) * Mathf.Min(Mathf.Abs(ang), rotSpeed * Time.deltaTime), eje));
+            m.KbRotate(Quaternion.AngleAxis(Mathf.Sign(ang) * Mathf.Min(Mathf.Abs(ang), rotSpeed / L * Time.deltaTime), eje));
         }
 
         IEnumerator AgarrarAguja()
@@ -169,8 +179,8 @@ namespace SutureTrainer
                     d.ToAngleAxis(out float ang, out Vector3 eje);
                     if (ang > 180f) ang -= 360f;
                     if (Mathf.Abs(ang) > 0.5f && eje.sqrMagnitude > 1e-6f)
-                        MR.KbRotate(Quaternion.AngleAxis(Mathf.Sign(ang) * Mathf.Min(Mathf.Abs(ang), rotSpeed * Time.deltaTime), eje));
-                    MR.KbNudge(Vector3.ClampMagnitude(ghost.position - _needle.transform.position, speed * Time.deltaTime));
+                        MR.KbRotate(Quaternion.AngleAxis(Mathf.Sign(ang) * Mathf.Min(Mathf.Abs(ang), rotSpeed / L * Time.deltaTime), eje));
+                    MR.KbNudge(Vector3.ClampMagnitude(ghost.position - _needle.transform.position, speed / L * Time.deltaTime));
                     t += Time.deltaTime;
                     yield return null;
                 }
@@ -220,12 +230,12 @@ namespace SutureTrainer
 
             // 1) encima de la entrada, orientando la punta hacia abajo y hacia la salida
             float t = 0f;
-            while (t < 8f)
+            while (t < 8f * L)
             {
                 Vector3 deseada = ((X() - E()).normalized * 0.5f + Vector3.down).normalized;
                 GirarHacia(MR, _needle.TipDir, deseada);
                 Vector3 d = E() + Vector3.up * 0.025f - _needle.TipPos;
-                MR.KbNudge(Vector3.ClampMagnitude(d, speed * Time.deltaTime));
+                MR.KbNudge(Vector3.ClampMagnitude(d, speed / L * Time.deltaTime));
                 if (d.magnitude < 0.003f && Vector3.Angle(_needle.TipDir, deseada) < 8f) break;
                 t += Time.deltaTime;
                 yield return null;
@@ -256,12 +266,12 @@ namespace SutureTrainer
             var hilo = F(l3, "thread") as ThreadBase;
             Vector3 dir = (Vector3.up + Vector3.right * 0.6f).normalized;
             float dist = 0.12f, t4 = 0f;
-            while (!pasado() && t4 < 15f)
+            while (!pasado() && t4 < 15f * L)
             {
                 bool tenso = hilo != null && hilo.Tension >= 1.08f;
-                if (!tenso) dist = Mathf.Min(dist + 0.10f * Time.deltaTime, 0.50f);
+                if (!tenso) dist = Mathf.Min(dist + 0.10f / L * Time.deltaTime, 0.50f);
                 Vector3 lejos = X() + dir * dist;
-                MR.KbNudge(Vector3.ClampMagnitude(lejos - _needle.TipPos, 0.12f * Time.deltaTime));
+                MR.KbNudge(Vector3.ClampMagnitude(lejos - _needle.TipPos, 0.12f / L * Time.deltaTime));
                 t4 += Time.deltaTime;
                 yield return null;
             }
@@ -309,12 +319,12 @@ namespace SutureTrainer
 
                 // 2) clavar y atravesar con la derecha (como el punto simple)
                 float t = 0f;
-                while (t < 8f)
+                while (t < 8f * L)
                 {
                     Vector3 deseada = ((X() - E()).normalized * 0.5f + Vector3.down).normalized;
                     GirarHacia(MR, _needle.TipDir, deseada);
                     Vector3 d = E() + Vector3.up * 0.025f - _needle.TipPos;
-                    MR.KbNudge(Vector3.ClampMagnitude(d, speed * Time.deltaTime));
+                    MR.KbNudge(Vector3.ClampMagnitude(d, speed / L * Time.deltaTime));
                     if (d.magnitude < 0.003f && Vector3.Angle(_needle.TipDir, deseada) < 8f) break;
                     t += Time.deltaTime;
                     yield return null;
@@ -344,12 +354,12 @@ namespace SutureTrainer
                 // 4) tracción con la izquierda (adaptativa, como el punto simple)
                 Vector3 dir = (Vector3.up + (X() - E()).normalized * 0.6f).normalized;
                 float dist = 0.10f, t4 = 0f;
-                while (!_lvl.Finished && l7.CurrentStep == Level7_BimanualStitch.Paso.Traccion && t4 < 15f)
+                while (!_lvl.Finished && l7.CurrentStep == Level7_BimanualStitch.Paso.Traccion && t4 < 15f * L)
                 {
                     bool tenso = hilo != null && hilo.Tension >= 1.08f;
-                    if (!tenso) dist = Mathf.Min(dist + 0.10f * Time.deltaTime, 0.40f);
+                    if (!tenso) dist = Mathf.Min(dist + 0.10f / L * Time.deltaTime, 0.40f);
                     Vector3 lejos = X() + dir * dist;
-                    ML.KbNudge(Vector3.ClampMagnitude(lejos - _l.TipPos, 0.12f * Time.deltaTime));
+                    ML.KbNudge(Vector3.ClampMagnitude(lejos - _l.TipPos, 0.12f / L * Time.deltaTime));
                     t4 += Time.deltaTime;
                     yield return null;
                 }

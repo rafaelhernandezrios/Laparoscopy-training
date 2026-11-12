@@ -121,11 +121,61 @@ namespace SutureTrainer
         bool _hasHome;
         public void Recenter() { _hasHome = false; }
 
+        // ---------------------------------------------------------------
+        // Resorte del propio aparato (bucle de servo a ~1 kHz). Unity solo
+        // mueve el ancla; la fuerza se calcula dentro de OpenHaptics, así que
+        // no vibra por la baja frecuencia de Unity. Unidades por calibrar con
+        // PruebaResorte (F11): el ancla va en el marco crudo de getPosition.
+        // ---------------------------------------------------------------
+        readonly double[] _ancla = new double[3];
+
+        /// <summary>Última posición cruda leída (unidades de getPosition, mm).</summary>
+        public Vector3 RawPos => new Vector3((float)_pos[0], (float)_pos[1], (float)_pos[2]);
+
+        /// <summary>Punto de mundo -> posición cruda del aparato (mm), inversa de TryReadPose.</summary>
+        public Vector3 MundoARaw(Vector3 mundo)
+        {
+            Vector3 local = Quaternion.Inverse(AnchorRot) * (mundo - AnchorPos);
+            Vector3 devM = _devHome + (local - LocalOffset) / Mathf.Max(0.01f, WorkspaceScale);
+            return new Vector3(devM.x * AxisSign.x, devM.y * AxisSign.y, devM.z * AxisSign.z) * 1000f;
+        }
+
+        /// <summary>Resorte del aparato hacia un ancla cruda. magnitud 0 lo apaga.</summary>
+        public bool SetSpringRaw(Vector3 anclaRaw, float magnitud)
+        {
+#if OPENHAPTICS_TOUCH
+            if (!_inited) return false;
+            _ancla[0] = anclaRaw.x; _ancla[1] = anclaRaw.y; _ancla[2] = anclaRaw.z;
+            try { setSpringValues(DeviceName, _ancla, Mathf.Max(0f, magnitud)); return true; }
+            catch (System.EntryPointNotFoundException) { return false; }
+#else
+            return false;
+#endif
+        }
+
         bool _initTried, _inited;
 
         // Diagnóstico: log de posición y orientación (ponlo en true para verlo).
         public bool VerboseLog = false;
         float _nextLog;
+
+        /// <summary>Permite volver a intentar la conexión (p. ej. tras enchufar el aparato).</summary>
+        public void Reintentar() { if (!_inited) _initTried = false; }
+
+        string ReadErrorRaw()
+        {
+#if OPENHAPTICS_TOUCH
+            try
+            {
+                var sb = new System.Text.StringBuilder(256);
+                int c = getHDError(sb, sb.Capacity);
+                return c != 0 || sb.Length > 0 ? $"HD error {c}: {sb}" : "sin código de error";
+            }
+            catch { return "sin detalle"; }
+#else
+            return "";
+#endif
+        }
 
         void EnsureInit()
         {
@@ -136,6 +186,15 @@ namespace SutureTrainer
             {
                 int r = initDevice(DeviceName);   // >=0 = ok en HapticsDirect
                 Debug.Log($"[TouchDevice] initDevice(\"{DeviceName}\") -> {r}");
+                // Con un solo Touch, Touch Smart Setup suele llamarlo "Default
+                // Device" aunque la escena pida "Right Device": se prueba solo.
+                if (r < 0 && DeviceName != "Default Device")
+                {
+                    string err = ReadErrorRaw();
+                    int r2 = initDevice("Default Device");
+                    Debug.Log($"[TouchDevice] \"{DeviceName}\" falló ({err}); initDevice(\"Default Device\") -> {r2}");
+                    if (r2 >= 0) { DeviceName = "Default Device"; r = r2; }
+                }
                 if (r >= 0)
                 {
                     if (!_schedulersArrancados)
@@ -148,7 +207,7 @@ namespace SutureTrainer
                 }
                 else
                 {
-                    Debug.LogError($"[TouchDevice] initDevice devolvió {r}. ¿El Touch está " +
+                    Debug.LogError($"[TouchDevice] initDevice devolvió {r} ({ReadErrorRaw()}). ¿El Touch está " +
                         "conectado, encendido y calibrado (Touch Smart Setup / Diagnostic)?");
                 }
             }
@@ -272,9 +331,13 @@ namespace SutureTrainer
 
             if (UseConstantForceEffect)
             {
-                // Sin AxisSign: getPosition y getTransform están documentados
-                // como "(Unity CSys)" y el plugin oficial pasa los Vector3 tal
-                // cual, sin tocar ejes (Vector3ToDoubleArray solo copia).
+                // Con AxisSign, igual que la posición. Antes se dejaba sin él
+                // (getPosition está documentado como "(Unity CSys)"), pero la
+                // posición SÍ se convierte con AxisSign en TryReadPose, así que
+                // fuerza y posición quedaban en marcos distintos. Medido el
+                // 12-11-2026 con la prueba de signos de ReproduccionHaptica:
+                // +x de mundo movía el stylus a -x de mundo, y lo mismo en z.
+                devForce = Vector3.Scale(devForce, AxisSign);
                 float mag = devForce.magnitude * ForceScale;
                 Vector3 dir = mag > 1e-5f ? devForce.normalized : Vector3.zero;
 
@@ -359,6 +422,7 @@ namespace SutureTrainer
                     else
                         setForce(DeviceName, _torqueZero, _torqueZero);
                     setVibrationValues(DeviceName, _vibDir, 0.0, 0.0, 0.0);
+                    try { setSpringValues(DeviceName, _ancla, 0.0); } catch (System.EntryPointNotFoundException) { }
                 }
                 catch { }
             }
@@ -453,6 +517,7 @@ namespace SutureTrainer
         // La vía BUENA de renderizar fuerza. Firmas tomadas del paquete oficial
         // HapticsDirect (HapticPlugin.cs), no deducidas.
         [DllImport(DLL)] static extern void setConstantForceValues(string deviceName, double[] direction, double magnitude);
+        [DllImport(DLL)] static extern void setSpringValues(string deviceName, double[] anchor, double magnitude);
         [DllImport(DLL)] static extern void setVibrationValues(string deviceName, double[] direction, double magnitude, double frequency, double time);
         [DllImport(DLL)] static extern int getHDError(System.Text.StringBuilder info, int len);
         [DllImport(DLL)] static extern void disconnectAllDevices();

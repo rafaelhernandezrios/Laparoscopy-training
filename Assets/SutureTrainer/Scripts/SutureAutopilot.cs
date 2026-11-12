@@ -106,6 +106,7 @@ namespace SutureTrainer
             Debug.Log($"[Piloto] Fin ({motivo}). " + Medicion());
             PararGrabacion();
             if (_master != null) { _master.KbJawOverride = -1f; }
+            ReproduccionHaptica.AlTerminarPiloto();
             if (Running == this) Running = null;
             Destroy(gameObject);
         }
