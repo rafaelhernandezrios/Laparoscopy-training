@@ -100,13 +100,13 @@ namespace SutureTrainer
             if (_r != null) MR.KbJawOverride = -1f;
             if (_l != null) ML.KbJawOverride = -1f;
             ReproduccionHaptica.AlTerminarPiloto();
-            VideoRecorder.End();
+            if (!VideoRecorder.TiempoReal) VideoRecorder.End();
             Debug.Log($"[PilotoNivel] Fin ({motivo}).");
             if (Running == this) Running = null;
             Destroy(gameObject);
         }
 
-        void OnDestroy() { if (Running == this) { Running = null; VideoRecorder.End(); } }
+        void OnDestroy() { if (Running == this) { Running = null; if (!VideoRecorder.TiempoReal) VideoRecorder.End(); } }
 
         // ------------------------------------------------------------ primitivas
 

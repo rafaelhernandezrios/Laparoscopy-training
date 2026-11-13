@@ -66,7 +66,7 @@ namespace SutureTrainer
         void PararGrabacion()
         {
             if (!_grabar || _carpeta == null) return;
-            VideoRecorder.End();
+            if (!VideoRecorder.TiempoReal) VideoRecorder.End();
             _grabar = false;
         }
 

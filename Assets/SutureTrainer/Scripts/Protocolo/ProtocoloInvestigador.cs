@@ -694,7 +694,16 @@ namespace SutureTrainer
             GUI.color = new Color(1f, 1f, 1f, 0.97f);
             GUI.Box(new Rect(x - 4, 2, w + 8, h - 4), GUIContent.none);
             GUILayout.BeginArea(new Rect(x, 6, w, h - 12));
+            GUILayout.BeginHorizontal();
             GUILayout.Label("Protocolo experimental · panel del investigador (F4)", _h);
+            bool grabando = VideoRecorder.TiempoReal;
+            if (GUILayout.Button(grabando ? "⏹ Detener vídeo" : "⏺ Grabar vídeo", GUILayout.Width(110)))
+            {
+                if (grabando) { VideoRecorder.End(); EventMarkers.Send("protocolo/video/fin"); }
+                else { VideoRecorder.BeginTiempoReal("protocolo_" + Limpio(_id)); EventMarkers.Send("protocolo/video/inicio"); }
+            }
+            GUILayout.EndHorizontal();
+            if (grabando) GUILayout.Label("● Grabando la pantalla (con panel) en tiempo real…", _bad);
 
             PanelEeg();
             GUILayout.Space(4);

@@ -17,13 +17,17 @@ namespace SutureTrainer
         Transform _panel;
         Camera _cam;
         bool _visible;
+        string _ultT = "", _ultC = "";
+        bool _ultF;
 
         public static void Mostrar(string titulo, string cuerpo, bool fijacion = false)
         {
             Asegurar();
+            _i._ultT = titulo; _i._ultC = cuerpo; _i._ultF = fijacion;
+            if (_i._panel == null) { _i._cam = null; _i.Construir(); }   // la cámara anterior se destruyó con su escena
             _i._titulo.text = titulo;
             _i._cuerpo.text = cuerpo;
-            _i._cuerpo.fontSize = fijacion ? 14f : 2.2f;
+            _i._cuerpo.fontSize = fijacion ? 3f : 0.42f;
             _i._visible = true;
             _i._panel.gameObject.SetActive(true);
             _i.Colocar(true);
@@ -33,7 +37,7 @@ namespace SutureTrainer
         {
             if (_i == null) return;
             _i._visible = false;
-            _i._panel.gameObject.SetActive(false);
+            if (_i._panel != null) _i._panel.gameObject.SetActive(false);
         }
 
         static void Asegurar()
@@ -53,16 +57,17 @@ namespace SutureTrainer
             var fondo = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Destroy(fondo.GetComponent<Collider>());
             fondo.transform.SetParent(_panel, false);
-            fondo.transform.localScale = new Vector3(1.3f, 0.8f, 1f);
+            fondo.transform.localScale = new Vector3(0.8f, 0.5f, 1f);
             fondo.transform.localPosition = new Vector3(0f, 0f, 0.01f);
             var mat = new Material(Shader.Find("Sprites/Default")) { color = new Color(0.04f, 0.06f, 0.09f, 0.88f) };
             var mr = fondo.GetComponent<MeshRenderer>();
             mr.sharedMaterial = mat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-            _titulo = Texto("Titulo", new Vector3(0f, 0.3f, 0f), 3.2f, new Color(0.65f, 0.85f, 1f));
-            _cuerpo = Texto("Cuerpo", new Vector3(0f, -0.04f, 0f), 2.2f, Color.white);
-            _cuerpo.rectTransform.sizeDelta = new Vector2(1.2f, 0.6f);
+            // Tamaños de TextMeshPro en mundo: ~0.045 m de letra por punto.
+            _titulo = Texto("Titulo", new Vector3(0f, 0.17f, 0f), 0.6f, new Color(0.65f, 0.85f, 1f));
+            _cuerpo = Texto("Cuerpo", new Vector3(0f, -0.04f, 0f), 0.42f, Color.white);
+            _cuerpo.rectTransform.sizeDelta = new Vector2(0.74f, 0.32f);
             _panel.gameObject.SetActive(false);
         }
 
@@ -76,25 +81,46 @@ namespace SutureTrainer
             t.color = c;
             t.alignment = TextAlignmentOptions.Center;
             t.enableWordWrapping = true;
-            t.rectTransform.sizeDelta = new Vector2(1.2f, 0.15f);
+            t.rectTransform.sizeDelta = new Vector2(0.74f, 0.1f);
             return t;
         }
 
-        void LateUpdate() { if (_visible) Colocar(false); }
+        void LateUpdate()
+        {
+            if (!_visible) return;
+            if (_panel == null) { Mostrar(_ultT, _ultC, _ultF); return; }
+            Colocar(false);
+        }
 
+        /// <summary>
+        /// El panel va hijo de la cámara que se está viendo, 1 m al frente y
+        /// centrado: así la cruz de fijación queda fija en el campo visual (lo
+        /// que pide una línea base) y se ve igual en el visor que en la vista Game.
+        /// </summary>
         void Colocar(bool inmediato)
         {
             var cam = DistractoresVisuales.CamaraActiva();
             if (cam == null) return;
-            _cam = cam;
-            Vector3 fwd = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
-            if (fwd.sqrMagnitude < 1e-4f) fwd = cam.transform.forward;
-            fwd.Normalize();
-            Vector3 objetivo = cam.transform.position + fwd * 1.4f;
-            Quaternion rot = Quaternion.LookRotation(fwd, Vector3.up);
-            float k = inmediato ? 1f : 1f - Mathf.Pow(0.02f, Time.unscaledDeltaTime);
-            _panel.position = Vector3.Lerp(_panel.position, objetivo, k);
-            _panel.rotation = Quaternion.Slerp(_panel.rotation, rot, k);
+            if (cam != _cam || _panel.parent != cam.transform)
+            {
+                _cam = cam;
+                _panel.SetParent(cam.transform, false);
+                _panel.localRotation = Quaternion.identity;
+                Debug.Log($"[Participante] Mensajes delante de la cámara '{cam.name}' (profundidad {cam.depth}).");
+            }
+            // Con visor: a 1 m (distancia cómoda). En el escritorio (modo teclado) la
+            // cámara va pegada a la mesa: a 0.35 m y escalado, para que nada lo tape,
+            // y corrido a la izquierda si el panel del investigador ocupa la derecha.
+            bool escritorio = KeyboardControls.Active;
+            float d = escritorio ? 0.35f : 1.0f;
+            float dx = escritorio && ProtocoloInvestigador.PanelVisible ? -0.22f * d : 0f;
+            _panel.localPosition = new Vector3(dx, 0f, Mathf.Max(cam.nearClipPlane + 0.05f, d));
+            _panel.localScale = Vector3.one * d;
+        }
+
+        void OnDestroy()
+        {
+            if (_panel != null) Destroy(_panel.gameObject);   // por si quedó colgado de una cámara
         }
     }
 }
