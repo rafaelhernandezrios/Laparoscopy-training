@@ -246,7 +246,7 @@ namespace SutureTrainer
 
         void OnGUI()
         {
-            if (!mostrarIndicador || KeyboardControls.Grabando) return;
+            if (!mostrarIndicador || KeyboardControls.Grabando || ProtocoloInvestigador.PanelVisible) return;
             GUI.depth = -100;   // por encima de la viñeta del endoscopio
             string txt = $"Distractores: {Nivel}{(Adaptativo ? " (adaptativo)" : "")}  ·  F6 nivel  F7 modo" +
                          $"  ·  Tarea 2: {(Tarea2 != null && Tarea2.Activa ? "sí" : "no")} (F8)" +

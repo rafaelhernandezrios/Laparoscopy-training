@@ -60,6 +60,23 @@ namespace SutureTrainer
                  "la tarea no se mueve: así cada condición adapta un solo eje.")]
         public bool congelarConDistractoresAdaptativos = true;
 
+        /// <summary>
+        /// false = el lazo calcula zona y traza pero NO mueve la dificultad
+        /// (condición no adaptativa y grupo acoplado del protocolo).
+        /// </summary>
+        public static bool AdaptacionHabilitada = true;
+
+        /// <summary>Fija la dificultad desde fuera (condición fija o acoplada), sin transición.</summary>
+        public void FijarDificultad(float d)
+        {
+            _dTarget = Mathf.Clamp01(d);
+            Difficulty = _dTarget;
+            ApplyContinuousParameters(Difficulty);
+        }
+
+        /// <summary>Lleva la dificultad hacia d con la transición suave habitual (réplica acoplada).</summary>
+        public void ObjetivoDificultad(float d) { _dTarget = Mathf.Clamp01(d); }
+
         bool CongeladoPorDistractores =>
             congelarConDistractoresAdaptativos && DistractorManager.I != null && DistractorManager.I.Adaptativo;
 
@@ -170,6 +187,7 @@ namespace SutureTrainer
                 // adaptan, la dificultad de la tarea se sostiene (y viceversa
                 // basta con dejar los distractores en modo fijo).
                 if (CongeladoPorDistractores) action = "hold_distractores";
+                else if (!AdaptacionHabilitada) action = "fijo";
                 else if (Time.time - _lastActionTime >= refractorySec)
                 {
                     bool? perfOk = PerformanceOk();
