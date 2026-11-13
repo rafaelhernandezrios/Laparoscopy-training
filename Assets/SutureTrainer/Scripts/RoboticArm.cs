@@ -27,16 +27,41 @@ namespace SutureTrainer
 
         [Header("Teleoperación")]
         public ControlMode mode = ControlMode.Absoluto;
+
+        [Tooltip("Modo cuando esta mano está en el Touch háptico. Relativo por " +
+                 "defecto: es lo que hace utilizable un volumen de trabajo de " +
+                 "16 cm.")]
+        public ControlMode touchMode = ControlMode.Relativo;
         [Range(0.1f, 1.5f)] public float motionScale = 0.75f;
         public Vector3 rotationOffsetEuler = new Vector3(50f, 0f, 0f);
+
+        [Tooltip("Desfase de orientación cuando la mano usa el Touch. Ajústalo " +
+                 "en Play si la herramienta no apunta como el stylus.")]
+        // Los 180° en Y NO son un valor tanteado: TouchDevice convierte la
+        // posición con diag(-1,1,-1) y la orientación con diag(1,1,-1). El
+        // primero tiene determinante +1 (no cambia de mano: es un giro de 180°
+        // sobre Y) y el segundo -1 (sí lo cambia), así que las dos
+        // conversiones discrepan exactamente en ese giro. Con el gimbal
+        // apagado no se notaba porque la orientación era fija; al encenderlo,
+        // la herramienta sale del revés.
+        //
+        // Se corrige AQUÍ y no en TouchDevice porque tocar AxisSign cambiaría
+        // el mapeo de posición, que está tanteado y funciona.
+        public Vector3 touchRotationOffsetEuler = new Vector3(50f, 180f, 0f);
         public Vector3 workspaceCenter;
         public Vector3 workspaceExtents = new Vector3(0.45f, 0.30f, 0.35f);
         public float maxJawAngle = 28f;
         public float shaftRadius = 0.008f;
 
-        [Header("Agarre con el robot (Touch sin botones)")]
-        [Tooltip("Con el Touch, asume mandíbulas cerradas y agarra por proximidad (hasta que haya botones).")]
-        public bool assumeGraspWithTouch = true;
+        [Header("Agarre con el robot")]
+        [Tooltip("Asume mandíbulas SIEMPRE cerradas en modo Touch y agarra por " +
+                 "proximidad. Solo para un stylus sin botones utilizables.")]
+        // Apagado: el Touch sí tiene botones y ya están leídos. TouchDevice
+        // saca _btn[0] como gatillo (mandíbulas) y _btn[1] como embrague, así
+        // que master.Trigger funciona igual que con el mando. Dejarlo
+        // encendido mantenía la pinza cerrada a la fuerza y hacía imposible
+        // soltar y recolocar la aguja, que es media maniobra de suturar.
+        public bool assumeGraspWithTouch = false;
         [Tooltip("Radio de agarre automático en modo Touch (m).")]
         public float autoGrabRadius = 0.05f;
         [Tooltip("Tecla para SOLTAR lo agarrado en modo Touch (teclado, Input System nuevo).")]
@@ -60,16 +85,46 @@ namespace SutureTrainer
         {
             _target = wrist != null ? wrist.position : transform.position;
             if (workspaceCenter == Vector3.zero) workspaceCenter = _target;
+            _modoPrevio = ModoActivo;
         }
+
+        /// <summary>
+        /// Modo de control según el aparato que lleva esta mano.
+        ///
+        /// El mando de Quest se mueve en toda la habitación, así que Absoluto
+        /// (la muñeca EN la mano) es lo intuitivo. El Touch tiene un volumen de
+        /// trabajo de ~16 cm, y con la actividad extendida 275 mm no llega:
+        /// medido, haría falta escalar x2.5, que es justo lo que se descartó
+        /// por dejar dianas de 14 mm en 5.6 mm de mano. Relativo rompe ese
+        /// compromiso — se avanza por incrementos y se recoloca la mano con el
+        /// embrague— así que alcance y precisión dejan de estar atados.
+        /// </summary>
+        ControlMode ModoActivo =>
+            master != null && master.ActiveBackend == MasterInput.Backend.TouchHaptic
+                ? touchMode
+                : mode;
+
+        ControlMode _modoPrevio;
 
         void Update()
         {
             if (master == null || wrist == null) return;
 
+            // Al conmutar de aparato (F1) el modo cambia con él. Relativo
+            // acumula sobre _target, así que hay que resembrarlo donde está la
+            // muñeca AHORA; si no, el instrumento saltaría al objetivo viejo.
+            var modo = ModoActivo;
+            if (modo != _modoPrevio)
+            {
+                _modoPrevio = modo;
+                _target = wrist.position;
+                _hasMaster = false;
+            }
+
             // --- posición objetivo ---
             if (master.IsTracked && !frozen)
             {
-                if (mode == ControlMode.Absoluto)
+                if (modo == ControlMode.Absoluto)
                 {
                     // la muñeca del instrumento está EN la mano, con un pequeño
                     // avance hacia delante como si sostuvieras la herramienta
@@ -82,15 +137,16 @@ namespace SutureTrainer
                     _lastMaster = master.WorldPos;
                     if (!master.Clutch)
                         _target += delta * motionScale;
+                    _target += master.ConsumirExtraGuia();   // reproducción háptica fuera del alcance del stylus
                 }
             }
             else { _hasMaster = false; }
 
-            if (mode == ControlMode.Relativo)
+            if (modo == ControlMode.Relativo)
                 _target = ClampToWorkspace(_target); // en absoluto la mano manda
 
             // en absoluto: sin suavizado extra (el MasterInput ya filtra temblor)
-            if (mode == ControlMode.Absoluto)
+            if (modo == ControlMode.Absoluto)
                 wrist.position = _target;
             else
                 wrist.position = Vector3.Lerp(wrist.position, _target, 1f - Mathf.Pow(0.001f, Time.deltaTime));
@@ -98,8 +154,12 @@ namespace SutureTrainer
             // --- orientación de la muñeca (EndoWrist) ---
             if (master.IsTracked && !frozen)
             {
-                Quaternion goal = master.WorldRot * Quaternion.Euler(rotationOffsetEuler);
-                if (mode == ControlMode.Absoluto)
+                Vector3 desfase =
+                    master.ActiveBackend == MasterInput.Backend.TouchHaptic
+                        ? touchRotationOffsetEuler
+                        : rotationOffsetEuler;
+                Quaternion goal = master.WorldRot * Quaternion.Euler(desfase);
+                if (modo == ControlMode.Absoluto)
                     wrist.rotation = goal;
                 else
                     wrist.rotation = Quaternion.Slerp(wrist.rotation, goal, 1f - Mathf.Pow(0.0005f, Time.deltaTime));
@@ -207,5 +267,29 @@ namespace SutureTrainer
         {
             if (Held != null) { Held.Detach(); Held = null; }
         }
+
+        /// <summary>
+        /// Toma un objeto aunque lo tenga el otro instrumento: es la
+        /// transferencia de aguja entre manos de la sutura intracorpórea.
+        /// encajar=false conserva la pose relativa (la izquierda toma la punta
+        /// por donde la alcanza); true la recoloca en el porta-agujas.
+        /// </summary>
+        public void ForceGrab(Graspable g, bool encajar = true)
+        {
+            if (g == null) return;
+            if (Held != null && Held != g) { Held.Detach(); Held = null; }
+            var otro = g.Holder;
+            if (otro != null && otro != this) otro.ClearHeld();
+            var aguja = g.GetComponent<SutureNeedle>();
+            if (aguja != null) aguja.SkipNextSnap = !encajar;
+            g.AttachTo(jawAnchor != null ? jawAnchor : wrist, this);
+            Held = g;
+            _wasClosed = true;
+            master?.Haptic(0.6f, 0.06f);
+            AudioFX.Click();
+        }
+
+        /// <summary>Olvida lo agarrado sin soltarlo (lo ha tomado el otro brazo).</summary>
+        public void ClearHeld() { Held = null; }
     }
 }

@@ -16,6 +16,17 @@ namespace SutureTrainer
 
         public System.Action onTensionEvent;
 
+        /// <summary>
+        /// A partir de qué estiramiento el hilo se considera tenso (avisa y
+        /// cambia de material).
+        ///
+        /// Vive aquí, y no en cada implementación, porque
+        /// AdaptiveDifficultyController lo ajusta en caliente buscando hilos por
+        /// tipo: mientras estuvo solo en VerletThread, cambiar de implementación
+        /// dejaba el lazo adaptativo sin encontrar nada y sin decirlo.
+        /// </summary>
+        public float tenseThreshold = 1.12f;
+
         /// <summary>Ratio de estiramiento (1 = reposo).</summary>
         public abstract float Tension { get; }
         public abstract bool HasPins { get; }

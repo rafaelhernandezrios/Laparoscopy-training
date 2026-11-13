@@ -56,6 +56,30 @@ namespace SutureTrainer
         public bool logTrace = true;
 
         // --- estado de la política ---
+        [Tooltip("Si los distractores están en modo adaptativo, la dificultad de " +
+                 "la tarea no se mueve: así cada condición adapta un solo eje.")]
+        public bool congelarConDistractoresAdaptativos = true;
+
+        /// <summary>
+        /// false = el lazo calcula zona y traza pero NO mueve la dificultad
+        /// (condición no adaptativa y grupo acoplado del protocolo).
+        /// </summary>
+        public static bool AdaptacionHabilitada = true;
+
+        /// <summary>Fija la dificultad desde fuera (condición fija o acoplada), sin transición.</summary>
+        public void FijarDificultad(float d)
+        {
+            _dTarget = Mathf.Clamp01(d);
+            Difficulty = _dTarget;
+            ApplyContinuousParameters(Difficulty);
+        }
+
+        /// <summary>Lleva la dificultad hacia d con la transición suave habitual (réplica acoplada).</summary>
+        public void ObjetivoDificultad(float d) { _dTarget = Mathf.Clamp01(d); }
+
+        bool CongeladoPorDistractores =>
+            congelarConDistractoresAdaptativos && DistractorManager.I != null && DistractorManager.I.Adaptativo;
+
         public float Difficulty { get; private set; }
         public Zone CurrentZone { get; private set; } = Zone.Optima;
         public float SmoothedScore { get; private set; }
@@ -91,6 +115,10 @@ namespace SutureTrainer
         static readonly Knob KParTime     = new Knob(180f,   120f,   90f);
         static readonly Knob KParPath     = new Knob(18f,    12f,    9f);
         static readonly Knob KMaxErrors   = new Knob(3f,     1f,     0f);
+
+        /// <summary>Umbrales calibrados de cada nivel, antes de escalarlos.</summary>
+        readonly Dictionary<TrainingLevel, (float t, float p, int e)> _baseNivel =
+            new Dictionary<TrainingLevel, (float t, float p, int e)>();
 
         static float Lerp(Knob k, float d)
         {
@@ -155,7 +183,12 @@ namespace SutureTrainer
             if (_candidateCount >= persistWindows && _candidate != CurrentZone)
             {
                 CurrentZone = _candidate;
-                if (Time.time - _lastActionTime >= refractorySec)
+                // Un solo eje adaptativo por condición: si los distractores se
+                // adaptan, la dificultad de la tarea se sostiene (y viceversa
+                // basta con dejar los distractores en modo fijo).
+                if (CongeladoPorDistractores) action = "hold_distractores";
+                else if (!AdaptacionHabilitada) action = "fijo";
+                else if (Time.time - _lastActionTime >= refractorySec)
                 {
                     bool? perfOk = PerformanceOk();
 
@@ -249,7 +282,7 @@ namespace SutureTrainer
             MasterInput.HapticGain = Lerp(KHapticGain, d);
 
             float tt = Lerp(KTenseThresh, d);
-            foreach (var th in FindObjectsByType<VerletThread>(FindObjectsSortMode.None))
+            foreach (var th in FindObjectsByType<ThreadBase>(FindObjectsSortMode.None))
                 th.tenseThreshold = tt;
         }
 
@@ -267,21 +300,33 @@ namespace SutureTrainer
             float pr = Lerp(KPunctureRad, d);
             foreach (var t in FindObjectsByType<PunctureTarget>(FindObjectsSortMode.None))
             {
+                // La dificultad ajusta la TOLERANCIA, no el tamaño dibujado.
+                // Antes rescalaba el marcador a radius*1.6 y con ello volvía a
+                // inflarlo a 45 mm justo después de que el nivel lo creara.
+                // El tope anatómico lo aplica PunctureTarget.EffectiveRadius.
                 t.radius = pr;
-                var marker = t.transform.Find("Marker");
-                if (marker != null)
-                    marker.localScale = new Vector3(pr * 1.6f, 0.004f, pr * 1.6f);
+                t.ApplyVisual();
             }
 
             float rr = Lerp(KRingRad, d);
             foreach (var r in FindObjectsByType<RingTarget>(FindObjectsSortMode.None))
                 r.ringRadius = rr;
 
+            // ---- MODIFICADO ----
+            // Antes se ESCRIBÍAN los valores absolutos (120 s, 12 m, 1 error en
+            // dificultad media) en todos los niveles, borrando su calibración:
+            // N1 tenía 90 s, N3 210 s, N4 300 s. Ahora se escala la base de cada
+            // nivel por la razón respecto al punto medio del knob.
             foreach (var lvl in FindObjectsByType<TrainingLevel>(FindObjectsSortMode.None))
             {
-                lvl.parTimeSec = Lerp(KParTime, d);
-                lvl.parPathMeters = Lerp(KParPath, d);
-                lvl.maxErrors = Mathf.RoundToInt(Lerp(KMaxErrors, d));
+                if (!_baseNivel.TryGetValue(lvl, out var b))
+                {
+                    b = (lvl.parTimeSec, lvl.parPathMeters, lvl.maxErrors);
+                    _baseNivel[lvl] = b;
+                }
+                lvl.parTimeSec = b.t * Lerp(KParTime, d) / KParTime.ships;
+                lvl.parPathMeters = b.p * Lerp(KParPath, d) / KParPath.ships;
+                lvl.maxErrors = Mathf.Max(0, Mathf.RoundToInt(b.e * Lerp(KMaxErrors, d) / KMaxErrors.ships));
             }
         }
 

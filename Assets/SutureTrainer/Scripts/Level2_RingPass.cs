@@ -12,6 +12,9 @@ namespace SutureTrainer
 
         SutureNeedle needle;
         RingTarget[] rings;
+
+        // Ver Level1: la aguja va con su cabo en todos los niveles.
+        ThreadBase thread;
         int current;
 
         protected override void Setup()
@@ -19,6 +22,8 @@ namespace SutureTrainer
             var tray = SpawnTray(fieldRoot.position + new Vector3(0.18f, 0.03f, -0.08f));
             needle = SpawnNeedle(tray.transform.position + Vector3.up * 0.02f,
                 Quaternion.Euler(90f, 0f, 0f));
+
+            thread = SpawnThread(needle);
 
             Vector3[] localPos =
             {

@@ -16,6 +16,12 @@ namespace SutureTrainer
         protected override string LevelTitle => "Nivel 1 · Manejo de aguja";
 
         SutureNeedle needle;
+
+        // La aguja lleva hilo tambien aqui. Una aguja de sutura nunca va suelta,
+        // y manejarla sin el cabo colgando entrena un gesto que no existe: el
+        // hilo estorba, se engancha y hay que tenerlo en cuenta al girar la
+        // muneca, que es justo lo que este nivel enseña.
+        ThreadBase thread;
         Transform ghost;
         int done;
         float holdTimer;
@@ -39,6 +45,8 @@ namespace SutureTrainer
             needle = SpawnNeedle(tray.transform.position + Vector3.up * 0.02f,
                 Quaternion.Euler(90f, 0f, 0f));
 
+            thread = SpawnThread(needle);
+
             ghost = BuildGhost();
             PlaceGhost(0);
             SetObjective("Toma la aguja de la bandeja con el porta-agujas DERECHO (gatillo para cerrar) y alinéala con la aguja fantasma.");
@@ -49,9 +57,37 @@ namespace SutureTrainer
             var go = new GameObject("GhostNeedle");
             go.transform.SetParent(fieldRoot, false);
             var mesh = ProcMesh.ArcTube(0.055f, 180f, 0.0035f, out _, out _, out _, out _);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var mr = go.AddComponent<MeshRenderer>();
-            if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.ghost;
+
+            var art = ArtSet.I;
+            bool useArt = art != null && art.needle != null;
+
+            if (useArt)
+            {
+                // El fantasma debe tener la MISMA forma y orientación que la
+                // aguja real. Con el arco procedural, alinear lo que se ve no
+                // alinea los transforms que compara Tick(), y la pose resulta
+                // imposible de conseguir.
+                Vector3 offset = ArtSet.ComputeAlignOffset(
+                    art.needle, art.needleScale, art.needleEuler,
+                    mesh.bounds.center) + art.needleOffset;
+
+                var visual = ArtSet.AttachVisual(art.needle, go.transform,
+                                                 art.needleScale, art.needleEuler, offset);
+                if (visual != null && MaterialSet.I != null)
+                {
+                    foreach (var r in visual.GetComponentsInChildren<Renderer>(true))
+                        r.sharedMaterial = MaterialSet.I.ghost;
+                }
+                else useArt = false;
+            }
+
+            if (!useArt || art.showProceduralGuides)
+            {
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var mr = go.AddComponent<MeshRenderer>();
+                if (MaterialSet.I != null) mr.sharedMaterial = MaterialSet.I.ghost;
+            }
+
             return go.transform;
         }
 

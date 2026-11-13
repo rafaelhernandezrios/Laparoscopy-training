@@ -9,6 +9,13 @@ namespace SutureTrainer
     /// </summary>
     public class TissuePatch : MonoBehaviour
     {
+        [Tooltip("Oculta la malla del parche. Con el órgano importado el " +
+                 "tejido VISIBLE es el hígado; este parche queda solo como " +
+                 "superficie lógica: de él salen punctureAllowed, el " +
+                 "seguimiento de la aguja y el plano contra el que " +
+                 "InstrumentHaptics calcula la fuerza de tejido.")]
+        public bool hideVisual;
+
         public float width = 0.55f;
         public float depth = 0.38f;
         public int resX = 34;
@@ -24,6 +31,11 @@ namespace SutureTrainer
         Mesh mesh;
         Vector3[] baseVerts, verts;
         float lastBadPuncture = -10f;
+        // La punta tiene que haber estado ENCIMA del tejido para que bajar de él
+        // cuente como punción. Si no, la aguja apoyada en la gasa (más baja que
+        // el plano, pero dentro de su huella) o al levantarla de ahí sumaba una
+        // "punción fuera de la diana" cada 1.5 s sin tocar nada.
+        bool _vistaEncima;
 
         public float SurfaceY => transform.position.y;
         public Vector3 WoundCenter => transform.position;
@@ -33,6 +45,11 @@ namespace SutureTrainer
         {
             BuildMesh();
             BuildWoundLine();
+            AttachOrganVisual();
+
+            if (hideVisual)
+                foreach (var mr in GetComponentsInChildren<MeshRenderer>(true))
+                    mr.enabled = false;
             var box = gameObject.GetComponent<BoxCollider>();
             if (box == null) box = gameObject.AddComponent<BoxCollider>();
             box.center = new Vector3(0f, -0.02f, 0f);
@@ -81,6 +98,32 @@ namespace SutureTrainer
                 (MaterialSet.I != null ? MaterialSet.I.tissue : null);
         }
 
+        /// <summary>
+        /// Cuelga el órgano importado de SuturingSimulator sobre el parche.
+        ///
+        /// El colisionador, la línea de herida y las dianas de punción siguen
+        /// siendo los procedurales, así que los ejercicios no cambian. Lo que
+        /// sí se pierde al ocultar el parche es ver la deformación: el órgano
+        /// es una malla estática de ~290k vértices y deformarla por CPU cada
+        /// frame no es viable.
+        /// </summary>
+        void AttachOrganVisual()
+        {
+            if (ArtSet.I == null || ArtSet.I.tissue == null) return;
+
+            var visual = ArtSet.AttachVisual(ArtSet.I.tissue, transform,
+                                             ArtSet.I.tissueScale, ArtSet.I.tissueEuler);
+            if (visual == null) return;
+
+            visual.localPosition = ArtSet.I.tissueOffset;
+
+            if (ArtSet.I.tissueReplacesPatch && !ArtSet.I.showProceduralGuides)
+            {
+                var mr = GetComponent<MeshRenderer>();
+                if (mr != null) mr.enabled = false;
+            }
+        }
+
         void BuildWoundLine()
         {
             var wound = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -101,10 +144,11 @@ namespace SutureTrainer
             Vector3 local = transform.InverseTransformPoint(tip);
             bool overPad = Mathf.Abs(local.x) < width * 0.5f && Mathf.Abs(local.z) < depth * 0.5f;
 
+            if (!overPad || local.y > 0f) _vistaEncima = overPad && local.y > 0f;
             if (overPad && local.y < 0.02f)
             {
                 Deform(local);
-                if (local.y < -0.008f && !punctureAllowed && Time.time - lastBadPuncture > 1.5f)
+                if (_vistaEncima && local.y < -0.008f && !punctureAllowed && Time.time - lastBadPuncture > 1.5f)
                 {
                     lastBadPuncture = Time.time;
                     onBadPuncture?.Invoke(tip);

@@ -6,6 +6,26 @@ namespace SutureTrainer
     public class PunctureTarget : MonoBehaviour
     {
         public float radius = 0.028f;
+
+        [Tooltip("Diámetro VISIBLE del marcador, en metros. Independiente de " +
+                 "radius: el radio es tolerancia de captura, no tamaño.")]
+        public float visualDiameter = 0.006f;
+
+        [Tooltip("Tope de tolerancia impuesto por la anatomía. Con el órgano " +
+                 "real las dianas quedan a ~24 mm entre sí, así que un radio " +
+                 "de 28 mm hacía que tocar una activara la de al lado. 0 = sin tope.")]
+        public float maxRadius = 0f;
+
+        /// <summary>Radio efectivo, respetando el tope anatómico.</summary>
+        public float EffectiveRadius => maxRadius > 0f ? Mathf.Min(radius, maxRadius) : radius;
+
+        /// <summary>Redibuja el marcador con su tamaño visible.</summary>
+        public void ApplyVisual()
+        {
+            var marker = transform.Find("Marker");
+            if (marker != null)
+                marker.localScale = new Vector3(visualDiameter, 0.004f, visualDiameter);
+        }
         public bool isEntry;
         public int pairIndex;
 
@@ -25,7 +45,17 @@ namespace SutureTrainer
             Apply();
         }
 
-        public void SetState(State s) { CurrentState = s; Apply(); }
+        public void SetState(State s)
+        {
+            bool punzada = s == State.Done && CurrentState != State.Done;
+            CurrentState = s;
+            Apply();
+            if (punzada)
+            {
+                EventMarkers.Send($"tarea/puncion|{(isEntry ? "entrada" : "salida")}|par={pairIndex}");
+                DistractorManager.Punzada(transform.position);
+            }
+        }
 
         void Apply()
         {
@@ -50,7 +80,7 @@ namespace SutureTrainer
         }
 
         public bool TipInside(Vector3 tipPos) =>
-            Vector3.Distance(tipPos, transform.position) < radius;
+            Vector3.Distance(tipPos, transform.position) < EffectiveRadius;
 
         /// <summary>Distancia de la punta al centro (para métrica de precisión).</summary>
         public float Deviation(Vector3 tipPos) => Vector3.Distance(tipPos, transform.position);

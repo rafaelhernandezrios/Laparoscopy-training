@@ -17,6 +17,8 @@ namespace SutureTrainer
         public System.Action<RingTarget, float> onPassed;
 
         Renderer rend;
+        MeshFilter mf;
+        float builtRadius;
         Material matIdle, matActive, matDone;
         float lastSide;
         bool hasSide;
@@ -24,8 +26,9 @@ namespace SutureTrainer
         public void Build(Material idle, Material active, Material done)
         {
             matIdle = idle; matActive = active; matDone = done;
-            var mf = gameObject.AddComponent<MeshFilter>();
+            mf = gameObject.AddComponent<MeshFilter>();
             mf.sharedMesh = ProcMesh.Torus(ringRadius, tubeRadius);
+            builtRadius = ringRadius;
             rend = gameObject.AddComponent<MeshRenderer>();
             rend.sharedMaterial = idle;
         }
@@ -33,6 +36,13 @@ namespace SutureTrainer
         void Update()
         {
             if (rend == null) return;
+            // La dificultad adaptativa cambia ringRadius después de Build: sin
+            // esto el aro visible seguía en 45 mm y la detección no coincidía.
+            if (mf != null && !Mathf.Approximately(builtRadius, ringRadius))
+            {
+                mf.sharedMesh = ProcMesh.Torus(ringRadius, tubeRadius);
+                builtRadius = ringRadius;
+            }
             if (IsDone) { rend.sharedMaterial = matDone; return; }
             rend.sharedMaterial = IsActive ? matActive : matIdle;
         }
